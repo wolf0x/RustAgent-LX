@@ -2,31 +2,97 @@
 
 # RustAgent
 
-面向本地 IT 系统工程师的 AI 辅助平台——专注于系统分析、日志调查与事件响应。完全运行在本地，单二进制部署，具备 WebSocket 网关、多模型支持、34+ 内置工具、权限管控、持久记忆与任务调度能力。面向 Windows 环境，开箱即用。
+跨平台通用 AI 智能体——支持 Web Dashboard 和 CLI 两种运行模式，具备 WebSocket 网关、多模型支持、31+ 内置工具、权限管控、持久记忆与任务调度能力。单二进制部署，开箱即用。
 
-## 项目定位
+## 🎯 项目定位
 
-RustAgent 专为本地 IT 系统工程师设计，解决日常运维中最耗时的三类工作：**系统状态分析**、**日志调查溯源**和**安全事件响应**。
+RustAgent 是一个**跨平台通用 AI 智能体**，从最初的 Windows IR（事件响应）系统演进而来，现在支持 Linux 和 Windows 双平台。
 
-传统方式下，工程师需要在多个工具间反复切换——事件查看器查日志、PowerShell 查进程、注册表编辑器查配置、netstat 查连接——每条线索都需要手动关联和判断。RustAgent 将这些能力统一到一个 AI Agent 中：工程师用自然语言描述问题现象，Agent 自动编排工具链，采集系统状态、检索相关日志、关联分析异常，最终给出结构化的调查结论和处置建议。
+**两种运行模式**：
+- **Web Dashboard 模式**：通过浏览器访问的交互式 Dashboard，支持实时对话、工具调用可视化、设置管理等
+- **CLI Headless 模式**：命令行自动化执行，适合脚本集成、定时任务、LongHorizon-Harness 等外部框架调用
 
-**典型场景**：
+**核心能力**：
+- 🔧 **31+ 内置工具**：文件操作、Shell 执行、浏览器自动化、恶意软件分析、日志分析、SSH 远程执行等
+- 🧠 **智能记忆系统**：SQLite + FTS5 全文搜索 + 知识蒸馏，积累调查经验
+- 🔒 **安全权限系统**：分类门控 + 意图策略引擎（Block/Audit/Pass）
+- 🌐 **多模型支持**：OpenAI-compatible API，支持 DeepSeek、GPT-4、Qwen 等
+- ⏰ **任务调度**：内置 CRON 调度器，支持定期巡检和自动化监控
+- 📊 **Profile 系统**：共享/隔离 workspace，多环境管理
 
-- **日志调查**：「最近 24 小时系统日志里有哪些错误和警告？按时间线整理出来」——Agent 自动调用事件日志工具，筛选关键级别，按时间排序，关联相关进程和服务状态
-- **系统分析**：「当前有哪些异常进程在占用大量资源？检查它们的启动来源」——Agent 编排进程枚举 + 资源占用分析 + Autoruns 持久化检测，给出完整的进程链分析
-- **安全排查**：「检查这台机器是否被植入了持久化后门」——Agent 串联注册表审计、计划任务枚举、服务枚举、Autoruns 检测，输出完整的持久化攻击面报告
-- **故障定位**：「服务 XXX 启动失败，帮我查原因」——Agent 查询服务状态、关联事件日志、检查依赖服务、分析配置文件，定位根因
+## 🚀 快速开始
 
-**为什么完全本地**：IT 工程师处理的日志、进程信息、注册表数据往往包含敏感的内网拓扑和凭据信息。RustAgent 的 AI 对话引擎、工具执行、数据存储全部在本地完成，API 密钥 AES-256-GCM 加密存储，只有 LLM 推理请求发往云端模型——原始系统数据不出本机。
+### 安装
 
-单个 Rust 编译产物（~30+MB）即包含完整的 AI 对话引擎、工具执行层、WebSocket 网关和 Web Dashboard，无需安装额外运行时或外部服务依赖。灵感来源于 Google ADK 的 Agent → LlmAgent → EventStream 架构模式，在 Rust 生态中实现了完整的 Agentic Loop。
+```bash
+# 从源码编译
+git clone https://github.com/wolf0x/RustAgent-LX.git
+cd RustAgent-LX
+cargo build --release
 
-## 核心架构
+# 二进制产物
+./target/release/RustAgent  # Linux
+.\target\release\RustAgent.exe  # Windows
+```
+
+### 运行模式
+
+#### Web Dashboard 模式
+
+```bash
+# 启动 Web Dashboard（默认端口 7788）
+RustAgent web
+
+# 指定端口
+RustAgent web --port 8080
+
+# 使用特定 profile
+RustAgent --profile web
+
+# 访问 Dashboard
+# 浏览器打开 http://localhost:7788
+# 使用启动时显示的密码登录
+```
+
+#### CLI Headless 模式
+
+```bash
+# 执行任务并退出
+RustAgent cli "检查磁盘空间并报告使用情况"
+
+# 使用特定 profile
+RustAgent --profile headless "分析系统日志"
+
+# 从文件读取任务（适合自动化）
+RustAgent --prompt-file task.md
+
+# 执行模式切换
+RustAgent --mode instant cli "快速任务"  # 默认，单轮快速
+RustAgent --mode expert cli "复杂分析"   # 多轮深度分析
+
+# 权限控制
+RustAgent --auto-approve cli "自动批准所有权限"
+RustAgent --read-only cli "只读模式"
+```
+
+### Profile 系统
+
+```bash
+# 默认：所有 profiles 共享 workspace
+RustAgent web                    # 使用 ~/.RustAgent/workspace/
+RustAgent cli "task"             # 使用 ~/.RustAgent/workspace/
+
+# 隔离模式：每个 profile 独立 workspace
+RustAgent --profile myproject --isolated cli "task"
+# 使用 ~/.RustAgent/workspace/profiles/myproject/
+```
+
+## 🏗️ 核心架构
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                  Dashboard SPA                   │
-│        (Chat / Skills / MCP / CRON / ...)       │
+│          Web Dashboard (SPA)                     │
+│    (Chat / Skills / MCP / CRON / Settings)      │
 └──────────────────────┬──────────────────────────┘
                        │ WebSocket / HTTP
 ┌──────────────────────┴──────────────────────────┐
@@ -36,18 +102,23 @@ RustAgent 专为本地 IT 系统工程师设计，解决日常运维中最耗时
 │  Runner → LlmAgent (Agentic Loop)               │
 │    ├── Agent trait → EventStream (9 种事件)      │
 │    ├── CJK-aware token budget 历史裁剪           │
-│    ├── Re-prompt 检测与自愈                      │
+│    ├── Thinking / ToolCall / ToolResult 输出     │
 │    └── Truncated JSON repair                    │
 ├─────────────────────────────────────────────────┤
+│  CLI Mode (Headless)                            │
+│    ├── stdin/stdout 交互                        │
+│    ├── 完整执行过程可见（stderr）                │
+│    └── Agent 回答输出（stdout）                  │
+├─────────────────────────────────────────────────┤
 │  Tool Layer                                      │
-│    ├── 34+ Built-in Tools                        │
+│    ├── 31+ Built-in Tools                        │
 │    ├── MCP Client (stdio + SSE)                 │
 │    ├── Skill Manager (weighted scoring)          │
 │    └── External Tools (workspace/tools/)         │
 ├─────────────────────────────────────────────────┤
 │  Infrastructure                                  │
 │    ├── Memory (SQLite + FTS5)                    │
-│    ├── Permission (category gates + bypass detect)│
+│    ├── Permission (category gates + bypass)      │
 │    ├── Intent Policy (Block / Audit / Pass)      │
 │    ├── Scheduler (CRON + interval)               │
 │    ├── Checkpoint (crash recovery)               │
@@ -56,146 +127,228 @@ RustAgent 专为本地 IT 系统工程师设计，解决日常运维中最耗时
 └─────────────────────────────────────────────────┘
 ```
 
-## 核心能力
+## 🛠️ 工具系统
+
+### 文件操作（5 个）
+- **FileRead** / **FileWrite** / **FileDelete** / **FileModify** / **FileList**
+- 支持大文件分块读取（>300MB 只读前 1MB）
+- 自动权限检查
+
+### Shell 执行
+- **ShellExecTool**：bash/sh（Linux）或 PowerShell/CMD（Windows）
+- **意图策略引擎**：语义级命令分析
+  - **Block**：`rm -rf /`、`dd of=/dev/sda`、`mkfs` 等不可逆操作
+  - **Audit**：`rm`、`kill`、`systemctl stop` 等高危操作（记录日志）
+  - **Pass**：`ps`、`ls`、`netstat` 等只读命令
+
+### 浏览器自动化（2 个）
+- **browser_cdp**：chromiumoxide CDP 隔离浏览器（无登录态，安全搜索）
+- **browser_skill**：BSK 扩展控制用户浏览器（需要登录态的操作）
+
+### 恶意软件分析（3 个）
+- **malware_scan**：Boreal YARA 规则扫描（支持自定义规则集）
+- **malware_deep**：PE 深度分析（goblin 解析 + iced-x86 反汇编）
+- **malware_analysis**：综合恶意软件分析
+
+### 日志分析（3 个）
+- **ir_log_parse**：通用日志解析（自动识别格式，安全模式匹配）
+- **ir_pcap_analyze**：PCAP 流量分析（协议分布、流跟踪、DNS/HTTP 提取）
+- **ir_weblog_scan**：Web 日志扫描（SQLi/XSS/RCE 检测）
+
+### Linux 应急响应（13 个）
+| 工具 | 能力 |
+|------|------|
+| linux_ir_process | 进程枚举、资源占用、命令行分析 |
+| linux_ir_network | TCP/UDP 连接、监听端口、关联进程 |
+| linux_ir_persistence | 持久化位置扫描（cron、systemd、SSH） |
+| linux_ir_rootkit | Rootkit 检测（常见特征匹配） |
+| linux_ir_file | 文件系统异常检测 |
+| linux_ir_web | Web 应用日志分析 |
+| linux_ir_mining | 挖矿程序检测 |
+| linux_ir_lateral | 横向移动痕迹检测 |
+| linux_ir_auth | 认证日志分析 |
+| linux_ir_backdoor | 后门检测 |
+| linux_ir_bruteforce | 暴力破解检测 |
+| linux_ir_integrity | 文件完整性检查 |
+| linux_ir_config | 系统配置审计 |
+
+### SSH 远程执行（2 个）
+- **linux_ssh**：SSH 远程命令执行（russh 实现）
+- **ir_linux**：Linux 远程应急响应
+
+### Web 工具（2 个）
+- **web_fetch**：HTTP/HTTPS 页面抓取
+- **browser_open**：打开默认浏览器（xdg-open/open）
+
+### 生产力工具（4 个）
+- **TodoWrite**：任务规划与进度跟踪
+- **CronManage**：CRON 任务管理
+- **MemoryMd**：MEMORY.md 读写（长期记忆）
+- **SysRemind**：系统提醒（通知到 Web Dashboard）
+
+### MCP 动态工具
+- 通过 MCP 协议接入外部工具服务器
+- 运行时动态注册到 ToolRegistry
+- 支持 stdio + SSE 双传输协议
+
+### 外部工具发现
+- `workspace/tools/` 目录下的可执行文件自动发现并注册
+- 支持 bash、python3、perl 等脚本
+
+## 🔒 安全特性
 
 ### 权限系统
+- **五级权限分类**：read / write / delete / modify / execute
+- **异步用户授权**：Web Dashboard 通过 WebSocket 推送授权请求
+- **跨类别绕过检测**：防止通过 shell_exec 绕过 file_delete 权限
 
-RustAgent 实现了分类门控（Category-based Gates）+ 意图策略（Intent Policy）的双层安全模型：
+### 命令意图策略
+- **语义解析**：提取 verb + targets，替代传统字符串黑名单
+- **三级判定**：
+  - **Block**：绝对禁止（磁盘格式化、安全日志清除等）
+  - **Audit**：审计放行（文件删除、进程终止等，记录日志）
+  - **Pass**：静默放行（只读查询等）
+- **Linux 专用规则**：
+  - Block：`rm -rf /`、`dd of=/dev/sda`、`mkfs`、fork 炸弹等
+  - Audit：`rm`、`kill`、`systemctl stop`、挂载操作等
+  - Pass：`ps`、`ls`、`netstat`、`cat` 等
 
-- **五级权限分类**：read / write / delete / modify / execute，每种工具调用声明所需权限类别
-- **异步用户授权**：当 Agent 请求高权限操作时，通过 WebSocket 向 Dashboard 推送授权请求，用户确认后通过 oneshot channel 返回结果，Agent 循环无阻塞等待
-- **命令意图策略引擎**：替代传统黑名单，对 shell_exec 命令进行语义解析（verb + targets），三级判定：
-  - **Block**（绝对禁止）：磁盘格式化、安全日志清除、编码命令等不可逆操作，无视任何授权状态硬拦截
-  - **Audit**（审计放行）：文件删除、进程终止、服务停止等高危但合法操作，记录日志后正常执行
-  - **Pass**（静默放行）：只读查询等常规操作
-- **Linux SSH 命令安全策略**：同样的 IntentPolicy 引擎应用于 `linux_ssh` 远程命令。解析 bash/sh 命令为结构化意图（verb + targets），Linux 专用规则：
-  - **Block**：根文件系统销毁（`rm -rf /`）、磁盘直写（`dd of=/dev/sda`）、磁盘格式化（`mkfs`）、安全日志销毁、Fork 炸弹、引导加载器修改
-  - **Audit**：文件删除（`rm`）、进程终止（`kill`）、服务控制（`systemctl stop`）、配置写入、挂载操作
-  - **Pass**：只读命令（`ps`、`ls`、`netstat`、`cat` 等）
-- **跨类别绕过检测**：当 shell_exec 已免确认（execute:true）但命令意图映射到被拒绝的权限类别（如 delete:false）时，自动升级为需要用户确认，防止 LLM 通过 shell_exec 绕过 file_delete 权限控制
-- **权限拒绝强反馈**：拒绝时向 LLM 返回强措辞错误消息，禁止使用替代工具绕过
+### 其他安全特性
+- **API 密钥加密**：AES-256-GCM，密钥从 machine-id 派生
+- **密码认证 Dashboard**：`.password` 文件保护
+- **CDP 浏览器隔离**：chromiumoxide 独立实例，无用户登录态
+- **权限拒绝强反馈**：拒绝时向 LLM 返回强措辞错误消息
 
-### 记忆系统
+## 🧠 记忆系统
 
-双层记忆架构，兼顾实时检索与长期调查经验积累——Agent 在每次调查中积累的经验会被蒸馏为可复用知识，下次遇到类似问题时自动参考：
+### SQLite + FTS5 对话记忆
+- 4 层 Schema 版本演进
+- CJK bigram 分词（中日韩文优化）
+- BM25 排序的全文搜索
+- 对话历史自动清理（3 天/50 条）
 
-**SQLite + FTS5 对话记忆**
-- 4 层 Schema 版本演进：基础对话 → FTS5 全文索引 → 检查点 → 用量统计
-- CJK bigram 分词：针对中文/日文/韩文优化 unicode61 tokenizer，空格插入单字符以支持 bigram 检索
-- BM25 排序的全文搜索，对话历史 3 天/50 条自动清理
-- conversations_fts 独立表，避免与主表耦合
+### 知识蒸馏
+- 会话结束时自动触发
+- LLM 提取结构化知识条目
+- 写入 `workspace/knowledge/` 下的 5 个分类文件
+- Append-only 设计，只增不改
 
-**知识蒸馏（Knowledge Distillation）**
-- 会话结束时自动触发：检测 WebSocket 断开，最低 4 条消息阈值
-- LLM 提取结构化知识条目，写入 `workspace/knowledge/` 下的 5 个分类文件：facts / decisions / lessons / preferences / skill_hints
-- Append-only 设计，只增不改，避免知识污染
-- 每条记录携带丰富元数据：title、trigger、context、source、confidence
+### 文件记忆（MEMORY.md）
+- LLM 主动维护的个人笔记
+- 自动注入 System Prompt
+- 与 SQLite 记忆互补
 
-**文件记忆（MEMORY.md）**
-- 由 LLM 主动维护的个人笔记，自动注入 System Prompt
-- 分为 user（用户画像）、memory（环境笔记）、daily（每日日志）三类
-- 与 SQLite 记忆互补：MEMORY.md 用于高优先级上下文，SQLite 用于海量历史检索
+## ⏰ 调度系统
 
-### 调度系统
-
-内置轻量级任务调度器，支持定期巡检与自动化监控，无需依赖系统级 cron：
-
-- **CRON 表达式**：标准 5 字段（分 时 日 月 周），支持时区
+- **CRON 表达式**：标准 5 字段（分 时 日 月 周）
 - **间隔语法**：`every 5m`、`every 2h` 等自然语言风格
-- **JSON 持久化**：任务定义存储于 `cron_tasks.json`，重启不丢失
-- **30 秒轮询**：调度器每 30 秒检查到期任务，通过独立 Agent 会话执行
-- **心跳机制**：从 `HEARTBEAT.md` 读取周期性健康检查清单，仅异常时通知用户，全空则自动跳过
+- **JSON 持久化**：任务定义存储于 `cron_tasks.json`
+- **30 秒轮询**：调度器每 30 秒检查到期任务
+- **心跳机制**：从 `HEARTBEAT.md` 读取周期性健康检查清单
 
-### 工具系统
+## 📊 CLI 输出
 
-34+ 内置工具围绕 IT 工程师的核心工作流设计，从日常系统检查到深度安全分析形成完整工具链：
+### 输出流分离
+- **stdout**：仅输出 agent 的最终回答（`TextDelta`）
+- **stderr**：输出所有执行过程（thinking、tool calls、results、errors）
 
-**文件操作**（5 个）：FileRead / FileWrite / FileDelete / FileModify / FileList——日志文件分析、配置文件审查的基础能力
+### 事件类型
+| 图标 | 事件 | 说明 |
+|------|------|------|
+| 💭 | Thinking | Agent 的思考过程 |
+| 🔧 | ToolCall | 工具调用和参数 |
+| ✅ | ToolResult | 工具执行结果 |
+| ⏳ | Progress | 长时间运行工具的进度 |
+| ❌ | Error | 错误信息 |
+| 📝 | TextDelta | Agent 的最终回答 |
 
-**系统工具**：ShellExecTool（PowerShell/CMD）——工程师可通过自然语言驱动任意系统命令，Agent 自动选择合适命令并解释输出结果。内置意图策略引擎（Intent Policy），对命令进行语义级分析：绝对禁止不可逆灾难操作（磁盘格式化、安全日志清除），审计记录高危但合法操作（文件删除、进程终止），静默放行常规只读命令
+### 使用示例
 
-**事件响应工具组**（14 个，IT 调查核心）：
+```bash
+# 查看完整执行过程
+RustAgent cli "检查磁盘空间" 2>&1
 
-| 工具 | 能力 | 典型调查用途 |
-|------|------|-------------|
-| 进程分析 | 枚举进程树、资源占用、命令行参数 | 识别异常进程、挖矿程序、无文件攻击 |
-| 网络连接 | TCP/UDP 连接、监听端口、关联进程 | 发现 C2 通信、异常外连、横向移动 |
-| 注册表审计 | Run/RunOnce、服务配置、策略键值 | 检测持久化后门、策略篡改 |
-| 服务枚举 | 服务状态、启动类型、二进制路径 | 发现伪装系统服务的恶意程序 |
-| 计划任务 | schtasks 枚举、触发器分析 | 检测定时执行的持久化载荷 |
-| 用户账户 | 本地用户、组成员、最近登录 | 排查账户劫持、新增后门账户 |
-| 防火墙规则 | 入站/出站规则、允许/阻止策略 | 分析网络访问控制、发现异常放行 |
-| 事件日志 | System/Security/Application 日志检索 | **日志调查核心**：按时间/级别/来源筛选，关联分析 |
-| 端口扫描 | 本地端口可达性检测 | 验证服务暴露面、排查端口冲突 |
-| Autoruns 持久化 | 全量持久化位置扫描 | 一键获取完整攻击面，对标 Sysinternals Autoruns |
-| Web 日志扫描 | HTTP 日志安全分析（SQLi/XSS/RCE/目录遍历/扫描器） | 检测 Web 攻击痕迹、异常请求模式、攻击源 IP 统计 |
-| EVTX 解析 | 离线解析 Windows 事件日志文件，60+ Event ID 风险分类 | 远程取证分析、安全事件筛选（认证失败/服务安装/Sysmon/日志清除等） |
-| 通用日志解析 | 自动识别日志格式（Syslog/CSV/Windows），安全模式匹配 | 多源日志聚合分析、严重级别分类、安全事件检测（27 种模式） |
-| PCAP 流量分析 | 离线解析 pcap/pcapng，协议分布、流跟踪、DNS/HTTP 提取、可疑端口检测 | 网络流量取证、C2 通信发现、DNS 隧道检测、异常连接分析 |
+# 只保存 agent 回答
+RustAgent cli "检查磁盘空间" > answer.txt
 
-这 14 个工具可被 Agent 自动编排——工程师只需描述调查目标，Agent 会按逻辑顺序调用多个工具，交叉关联结果，输出结构化报告。例如排查「开机后系统变慢」时，Agent 可能依次执行：进程分析（找高 CPU 进程）→ 网络连接（检查该进程是否有异常外连）→ Autoruns（追溯其启动来源）→ 事件日志（查找相关时间段的系统事件）。
+# 保存完整日志
+RustAgent --mode expert cli "分析系统" > full_log.txt 2>&1
+```
 
-**恶意软件分析**：Boreal YARA 规则扫描（支持自定义规则集，本地文件加载）+ PE 深度分析（goblin 解析导入表/节区/资源 + iced-x86 反汇编关键函数），可对可疑文件进行静态分析
+## 🔗 LongHorizon-Harness 集成
 
-**浏览器自动化**：chromiumoxide CDP 隔离浏览器（无登录态，用于安全搜索）+ 用户浏览器控制（BSK 扩展，用于需要登录态的操作）
+RustAgent 支持作为 LongHorizon-Harness 的 agent 后端：
 
-**Web 工具**：WebFetch（抓取页面内容分析）/ WebSearch（搜索漏洞情报、CVE 信息）/ ImageSearch / ImageGen
+```bash
+# Harness 调用命令模板
+RustAgent --profile headless \
+  --prompt-file {prompt_path} \
+  --timeout {seconds} \
+  --auto-approve
+```
 
-**生产力工具**：TodoWrite（调查任务规划与进度跟踪）、AskUserQuestion（调查中向工程师确认关键决策）、CronManage（定时巡检任务调度）
+- `--prompt-file`：从文件读取任务
+- `--timeout`：执行超时控制
+- `--auto-approve`：自动批准所有权限
+- `--trajectory`：JSONL 轨迹输出
 
-**MCP 动态工具**：通过 MCP 协议接入外部工具服务器（如 SIEM、CMDB 等），运行时动态注册，扩展调查能力边界
+Python adapter 见：`adapters/rustagent_adapter.py`
 
-**外部工具发现**：`workspace/tools/` 目录下的可执行文件自动发现并注册，工程师可将自有的分析脚本纳入 Agent 工具链
+## 📁 配置
 
-### MCP 集成
+### 工作目录
 
-基于 rmcp v1.8.0 的完整 MCP 客户端实现：
+**Linux**：`~/.RustAgent/workspace/`  
+**Windows**：`%USERPROFILE%\.RustAgent\workspace\`
 
-- **双传输协议**：stdio（子进程）+ SSE/StreamableHTTP（远程服务）
-- **动态工具注册**：MCP 服务器连接后，其 tools 自动合并到 ToolRegistry
-- **认证加密**：AES-256-GCM 加密存储 auth_token，密钥由 Windows MachineGuid 派生
-- **多服务器管理**：支持同时连接多个 MCP 服务器，统一工具命名空间
+### 目录结构
 
-### 技能系统
+```
+workspace/
+├── config.toml          # 主配置
+├── models.json          # 模型配置（API Key 加密存储）
+├── mcp_servers.json     # MCP 服务器配置
+├── cron_tasks.json      # 定时任务定义
+├── .password            # Dashboard 访问密码（仅 Web 模式）
+├── memory/
+│   └── memory.db        # SQLite 记忆数据库
+├── knowledge/           # 知识蒸馏输出
+├── skills/              # 技能目录
+├── tools/               # 外部工具目录
+├── logs/                # 运行日志（rustagent-YYYY-MM-DD.N.log）
+├── static/              # Dashboard 静态资源
+└── output/              # 工具输出
+```
 
-渐进式加载的程序性知识库，区别于声明式知识：
+### 配置文件示例
 
-- **目录结构**：`skills/{Name}/SKILL.md` + 可选 reference.md 等附件
-- **加权评分匹配**：name(×4) + description(×2.5) + triggers(×2) + body(×1)，sqrt 归一化
-- **CJK 感知分词**：中英文混合内容正确 tokenize
-- **元工具设计**：Skill 不预加载到 prompt，而是通过 find_matching() 按需激活，节省 token
-- **Frontmatter 规范**：YAML 头部始终使用 yaml_quote()，防止冒号值解析错误
+**config.toml**：
+```toml
+[server]
+host = "127.0.0.1"
+port = 7788
 
-### 安全特性
+[agent]
+working_dir = "."
+max_iterations = 100
+mode = "instant"  # 或 "expert"
+timezone_offset = 8
+```
 
-- **API 密钥加密**：AES-256-GCM 静态加密，密钥从 Windows MachineGuid 派生，存储于 `models.json`
-- **命令意图策略**（Intent Policy）：基于语义解析的三级命令安全评估（Block/Audit/Pass），替代传统字符串黑名单
-- **跨类别绕过防御**：检测 LLM 通过 shell_exec 绕过 file_delete 等权限控制的行为，自动升级为需要用户确认
-- **绝对禁止清单**：磁盘格式化（Format-Volume/Clear-Disk）、安全日志清除（Clear-EventLog Security）、引导记录破坏（bcdedit/bootrec）、编码命令（-EncodedCommand）——无论权限状态如何，硬拦截不可覆盖
-- **密码认证 Dashboard**：`.password` 文件保护的 Web 界面访问控制
-- **CDP 浏览器隔离**：chromiumoxide 运行在独立 Chromium 实例中，无用户登录态
+**models.json**：
+```json
+[
+  {
+    "name": "deepseek-v4-flash",
+    "api_base": "https://api.deepseek.com",
+    "api_key": "your-key-here",
+    "context_window": 128000,
+    "max_tokens": 16384
+  }
+]
+```
 
-### 检查点与崩溃恢复
-
-- 每轮工具调用后持久化对话历史到 SQLite
-- 异常断开后可从最近检查点恢复上下文
-- 支持会话摘要（summary）压缩，减少历史 token 占用
-
-### Dashboard
-
-密码认证的 SPA 单页应用，功能覆盖 Agent 全生命周期管理：
-
-- **Chat**：实时对话，流式输出，工具调用可视化
-- **Settings**：模型配置、Agent 参数调整
-- **Skills**：技能浏览、创建、编辑、删除
-- **MCP**：MCP 服务器管理与状态监控
-- **History**：对话历史检索与回溯
-- **CRON**：定时任务管理（增删改查、启停）
-- **Tools**：内置工具与外部工具列表
-- **Memory**：记忆内容查看与管理
-- **Usage**：Token 用量分析图表
-
-## 技术栈
+## 🛠️ 技术栈
 
 | 组件 | 技术选型 |
 |------|----------|
@@ -207,98 +360,44 @@ RustAgent 实现了分类门控（Category-based Gates）+ 意图策略（Intent
 | 浏览器 | chromiumoxide (CDP) |
 | 加密 | aes-gcm (AES-256-GCM) |
 | YARA | boreal (规则扫描) |
-| PE 解析 | goblin + iced-x86 (反汇编) |
+| PE 解析 | goblin + iced-x86 |
+| SSH | russh (SSH 客户端) |
 | 序列化 | serde + serde_json + serde_yaml + toml |
-| 日志分析 | regex（模式匹配）+ evtx（EVTX 解析） |
-| 流量分析 | pcap-parser（pcap/pcapng 离线解析） |
-| 日志 | tracing + tracing-subscriber (env-filter) |
+| 日志分析 | regex + pcap-parser |
+| 日志 | tracing + tracing-subscriber |
+| CLI | clap (derive) |
 
-## 配置
-
-运行时工作目录：`%USERPROFILE%\.RustAgent\workspace\`
-
-```
-workspace/
-├── config.toml          # 主配置（Server / Agent / Model）
-├── models.json          # 模型配置（API Key 加密存储）
-├── mcp_servers.json     # MCP 服务器配置
-├── cron_tasks.json      # 定时任务定义
-├── .password            # Dashboard 访问密码
-├── memory/
-│   └── memory.db        # SQLite 记忆数据库
-├── knowledge/           # 知识蒸馏输出（append-only）
-├── skills/              # 技能目录
-├── tools/               # 外部工具目录
-├── logs/                # JSONL 对话日志
-├── static/              # Dashboard 静态资源
-└── output/              # 工具输出（截图/报告等）
-```
-
-## 构建与运行
+## 📦 构建
 
 ```bash
-# 编译 release 版本（~28MB，LTO + strip）
+# 编译 release 版本（~30MB，LTO + strip）
 cargo build --release
 
-# 二进制产物
-target/release/RustAgent.exe
+# 运行测试
+cargo test
 
-# 首次运行自动创建 workspace 目录结构
-.\target\release\RustAgent.exe
+# 代码检查
+cargo check
 ```
 
-Release profile 配置：`opt-level = 3`、`lto = true`、`strip = true`，确保最小二进制体积与最优运行性能。
+Release profile：`opt-level = 3`、`lto = true`、`strip = true`
 
-## 项目结构
+## 📚 文档
 
-```
-src/
-├── main.rs              # 入口：workspace 初始化、依赖装配、启动服务器
-├── server.rs            # Axum HTTP/WS 服务器、REST API、SSE 流
-├── config.rs            # TOML 配置加载
-├── agent/
-│   ├── mod.rs           # Agent trait、EventStream 类型
-│   ├── llm_agent.rs     # LlmAgent：Agentic Loop、工具执行、历史裁剪
-│   └── event.rs         # AgentEvent（9 种事件类型）
-├── model/
-│   ├── mod.rs           # Llm trait、ChatMessage、ToolDefinition
-│   └── openai.rs        # OpenAI-compatible streaming client
-├── tool/
-│   ├── mod.rs           # Tool trait、ToolRegistry、二进制解析
-│   ├── file_ops.rs      # 文件操作 5 工具
-│   ├── shell_exec.rs    # Shell 执行（意图策略引擎集成）
-│   ├── mcp_client.rs    # MCP 客户端管理器
-│   ├── memory_md.rs     # MEMORY.md 读写
-│   ├── cron_manage.rs   # CRON 任务管理
-│   ├── todo_update.rs   # 任务规划跟踪
-│   ├── ir_*.rs          # 事件响应工具（14 个，含日志分析+流量分析）
-│   └── malware_*.rs     # 恶意软件分析（YARA + PE）
-├── permission.rs        # 权限检查器（分类门控 + 异步授权 + 跨类别绕过检测）
-├── policy/              # 命令意图策略引擎
-│   ├── mod.rs           # IntentPolicy + LinuxIntentPolicy（Block/Audit/Pass）
-│   ├── parse.rs         # Windows PS/CMD 意图解析器（verb + targets）
-│   ├── rules.rs         # Windows BlockRule + AuditRule
-│   ├── linux_parse.rs   # Linux bash/sh 意图解析器
-│   └── linux_rules.rs   # Linux BlockRule + AuditRule
-├── memory.rs            # MemoryStore（SQLite + FTS5）
-├── distill.rs           # 知识蒸馏引擎
-├── scheduler.rs         # CRON 调度器
-├── heartbeat.rs         # 心跳健康检查
-├── skill/
-│   ├── mod.rs           # SkillManager
-│   └── types.rs         # SelectionPolicy、加权评分
-├── crypto.rs            # AES-256-GCM 加密
-├── checkpoint.rs        # 对话检查点（崩溃恢复）
-├── runner.rs            # 会话管理、Agent 调度
-├── context.rs           # 上下文层级（Readonly → Callback → Tool）
-├── callbacks.rs         # 生命周期钩子
-├── error.rs             # 结构化错误
-├── model_store.rs       # 模型配置持久化（加密 API Key）
-├── external_tools.rs    # 外部工具发现
-├── log/                 # JSONL 日志
-└── web/                 # 静态文件服务
-```
+- [CLI_OUTPUT_IMPROVEMENTS.md](CLI_OUTPUT_IMPROVEMENTS.md) - CLI 输出改进详情
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) - v1.0.0 发布说明
+- [HARNESS_INTEGRATION.md](HARNESS_INTEGRATION.md) - LongHorizon-Harness 集成指南
 
-## License
+## 🙏 致谢
+
+原始项目：[AI_IT_AGENT](https://github.com/wolf0x/AI_IT_AGENT) by wolf0x
+
+本项目从 Windows IR 专用工具演进为跨平台通用智能体，保留了核心的 Agent 架构和工具系统设计。
+
+## 📄 License
 
 MIT
+
+---
+
+**RustAgent - 跨平台通用 AI 智能体，从 Windows IR 到通用自动化的演进之旅** 🚀

@@ -2,31 +2,97 @@
 
 # RustAgent
 
-An AI-powered assistant platform for local IT system engineers — focused on system analysis, log investigation, and incident response. Fully local, single-binary deployment with WebSocket gateway, multi-model support, 34+ built-in tools, permission control, persistent memory, and task scheduling. Designed for Windows, ready out of the box.
+Cross-platform general-purpose AI agent with Web Dashboard and CLI modes, WebSocket gateway, multi-model support, 31+ built-in tools, permission control, persistent memory, and task scheduling. Single-binary deployment, ready out of the box.
 
-## Positioning
+## 🎯 Positioning
 
-RustAgent is built specifically for local IT system engineers, addressing the three most time-consuming areas of daily operations: **system status analysis**, **log investigation & root cause tracing**, and **security incident response**.
+RustAgent is a **cross-platform general-purpose AI agent** that evolved from a Windows IR (Incident Response) system to support both Linux and Windows platforms.
 
-In traditional workflows, engineers constantly switch between tools — Event Viewer for logs, PowerShell for processes, Registry Editor for configurations, netstat for connections — manually correlating clues across each. RustAgent unifies these capabilities into a single AI Agent: engineers describe symptoms in natural language, the Agent orchestrates the toolchain automatically, collects system state, retrieves relevant logs, correlates anomalies, and delivers structured investigation reports with remediation recommendations.
+**Two Operating Modes**:
+- **Web Dashboard Mode**: Interactive browser-based dashboard with real-time chat, tool call visualization, settings management
+- **CLI Headless Mode**: Command-line automation for script integration, scheduled tasks, and external frameworks like LongHorizon-Harness
 
-**Typical Scenarios**:
+**Core Capabilities**:
+- 🔧 **31+ Built-in Tools**: File operations, shell execution, browser automation, malware analysis, log analysis, SSH remote execution
+- 🧠 **Intelligent Memory System**: SQLite + FTS5 full-text search + knowledge distillation
+- 🔒 **Security Permission System**: Category gates + Intent Policy engine (Block/Audit/Pass)
+- 🌐 **Multi-model Support**: OpenAI-compatible API, supporting DeepSeek, GPT-4, Qwen, etc.
+- ⏰ **Task Scheduling**: Built-in CRON scheduler for periodic monitoring and automation
+- 📊 **Profile System**: Shared/isolated workspace for multi-environment management
 
-- **Log Investigation**: *"What errors and warnings are in the system logs from the last 24 hours? Organize them on a timeline."* — The Agent automatically invokes event log tools, filters by severity level, sorts chronologically, and correlates with related process and service states
-- **System Analysis**: *"Which processes are consuming excessive resources right now? Check their launch origins."* — The Agent orchestrates process enumeration + resource usage analysis + Autoruns persistence detection to deliver a complete process chain analysis
-- **Security Investigation**: *"Check if this machine has any persistence backdoors installed."* — The Agent chains registry auditing, scheduled task enumeration, service enumeration, and Autoruns detection to produce a comprehensive persistence attack surface report
-- **Fault Diagnosis**: *"Service XXX failed to start, help me find out why."* — The Agent queries service status, correlates event logs, checks dependent services, and analyzes configuration files to pinpoint the root cause
+## 🚀 Quick Start
 
-**Why Fully Local**: Logs, process information, and registry data that IT engineers handle often contain sensitive internal network topology and credential information. RustAgent's AI conversation engine, tool execution, and data storage all run locally. API keys are encrypted with AES-256-GCM at rest. Only LLM inference requests are sent to the cloud model — raw system data never leaves the machine.
+### Installation
 
-A single Rust binary (~30+MB) contains the complete AI conversation engine, tool execution layer, WebSocket gateway, and Web Dashboard — no additional runtime or external service dependencies required. Inspired by Google ADK's Agent → LlmAgent → EventStream architecture pattern, implementing a full Agentic Loop within the Rust ecosystem.
+```bash
+# Build from source
+git clone https://github.com/wolf0x/RustAgent-LX.git
+cd RustAgent-LX
+cargo build --release
 
-## Core Architecture
+# Binary output
+./target/release/RustAgent  # Linux
+.\target\release\RustAgent.exe  # Windows
+```
+
+### Running Modes
+
+#### Web Dashboard Mode
+
+```bash
+# Start Web Dashboard (default port 7788)
+RustAgent web
+
+# Specify port
+RustAgent web --port 8080
+
+# Use specific profile
+RustAgent --profile web
+
+# Access Dashboard
+# Open browser at http://localhost:7788
+# Login with password shown at startup
+```
+
+#### CLI Headless Mode
+
+```bash
+# Execute task and exit
+RustAgent cli "Check disk space and report usage"
+
+# Use specific profile
+RustAgent --profile headless "Analyze system logs"
+
+# Read task from file (for automation)
+RustAgent --prompt-file task.md
+
+# Execution mode switching
+RustAgent --mode instant cli "Quick task"  # Default, single-pass
+RustAgent --mode expert cli "Complex analysis"   # Multi-round depth
+
+# Permission control
+RustAgent --auto-approve cli "Auto-approve all permissions"
+RustAgent --read-only cli "Read-only mode"
+```
+
+### Profile System
+
+```bash
+# Default: all profiles share workspace
+RustAgent web                    # Uses ~/.RustAgent/workspace/
+RustAgent cli "task"             # Uses ~/.RustAgent/workspace/
+
+# Isolated mode: each profile has independent workspace
+RustAgent --profile myproject --isolated cli "task"
+# Uses ~/.RustAgent/workspace/profiles/myproject/
+```
+
+## 🏗️ Core Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                  Dashboard SPA                   │
-│        (Chat / Skills / MCP / CRON / ...)       │
+│          Web Dashboard (SPA)                     │
+│    (Chat / Skills / MCP / CRON / Settings)      │
 └──────────────────────┬──────────────────────────┘
                        │ WebSocket / HTTP
 ┌──────────────────────┴──────────────────────────┐
@@ -36,18 +102,23 @@ A single Rust binary (~30+MB) contains the complete AI conversation engine, tool
 │  Runner → LlmAgent (Agentic Loop)               │
 │    ├── Agent trait → EventStream (9 event types)│
 │    ├── CJK-aware token budget history trimming  │
-│    ├── Re-prompt detection & self-healing       │
+│    ├── Thinking / ToolCall / ToolResult output  │
 │    └── Truncated JSON repair                    │
 ├─────────────────────────────────────────────────┤
+│  CLI Mode (Headless)                            │
+│    ├── stdin/stdout interaction                 │
+│    ├── Complete execution process (stderr)      │
+│    └── Agent answer output (stdout)             │
+├─────────────────────────────────────────────────┤
 │  Tool Layer                                      │
-│    ├── 34+ Built-in Tools                        │
+│    ├── 31+ Built-in Tools                        │
 │    ├── MCP Client (stdio + SSE)                 │
 │    ├── Skill Manager (weighted scoring)          │
 │    └── External Tools (workspace/tools/)         │
 ├─────────────────────────────────────────────────┤
 │  Infrastructure                                  │
 │    ├── Memory (SQLite + FTS5)                    │
-│    ├── Permission (category gates + bypass detect)│
+│    ├── Permission (category gates + bypass)      │
 │    ├── Intent Policy (Block / Audit / Pass)      │
 │    ├── Scheduler (CRON + interval)               │
 │    ├── Checkpoint (crash recovery)               │
@@ -56,149 +127,231 @@ A single Rust binary (~30+MB) contains the complete AI conversation engine, tool
 └─────────────────────────────────────────────────┘
 ```
 
-## Core Capabilities
+## 🛠️ Tool System
+
+### File Operations (5 tools)
+- **FileRead** / **FileWrite** / **FileDelete** / **FileModify** / **FileList**
+- Large file chunked reading (>300MB reads only first 1MB)
+- Automatic permission checking
+
+### Shell Execution
+- **ShellExecTool**: bash/sh (Linux) or PowerShell/CMD (Windows)
+- **Intent Policy Engine**: Semantic-level command analysis
+  - **Block**: `rm -rf /`, `dd of=/dev/sda`, `mkfs`, and other irreversible operations
+  - **Audit**: `rm`, `kill`, `systemctl stop`, and other high-risk operations (logged)
+  - **Pass**: `ps`, `ls`, `netstat`, and other read-only commands
+
+### Browser Automation (2 tools)
+- **browser_cdp**: chromiumoxide CDP isolated browser (no login state, secure search)
+- **browser_skill**: BSK extension controls user browser (operations requiring login state)
+
+### Malware Analysis (3 tools)
+- **malware_scan**: Boreal YARA rule scanning (custom rule sets supported)
+- **malware_deep**: PE deep analysis (goblin parsing + iced-x86 disassembly)
+- **malware_analysis**: Comprehensive malware analysis
+
+### Log Analysis (3 tools)
+- **ir_log_parse**: Universal log parsing (auto-identify format, security pattern matching)
+- **ir_pcap_analyze**: PCAP traffic analysis (protocol distribution, flow tracking, DNS/HTTP extraction)
+- **ir_weblog_scan**: Web log scanning (SQLi/XSS/RCE detection)
+
+### Linux Incident Response (13 tools)
+| Tool | Capability |
+|------|------------|
+| linux_ir_process | Process enumeration, resource usage, command line analysis |
+| linux_ir_network | TCP/UDP connections, listening ports, associated processes |
+| linux_ir_persistence | Persistence location scanning (cron, systemd, SSH) |
+| linux_ir_rootkit | Rootkit detection (common signature matching) |
+| linux_ir_file | File system anomaly detection |
+| linux_ir_web | Web application log analysis |
+| linux_ir_mining | Mining program detection |
+| linux_ir_lateral | Lateral movement trace detection |
+| linux_ir_auth | Authentication log analysis |
+| linux_ir_backdoor | Backdoor detection |
+| linux_ir_bruteforce | Brute force detection |
+| linux_ir_integrity | File integrity checking |
+| linux_ir_config | System configuration auditing |
+
+### SSH Remote Execution (2 tools)
+- **linux_ssh**: SSH remote command execution (russh implementation)
+- **ir_linux**: Linux remote incident response
+
+### Web Tools (2 tools)
+- **web_fetch**: HTTP/HTTPS page fetching
+- **browser_open**: Open default browser (xdg-open/open)
+
+### Productivity Tools (4 tools)
+- **TodoWrite**: Task planning and progress tracking
+- **CronManage**: CRON task management
+- **MemoryMd**: MEMORY.md read/write (long-term memory)
+- **SysRemind**: System reminders (notifications to Web Dashboard)
+
+### MCP Dynamic Tools
+- Connect to external tool servers via MCP protocol
+- Runtime dynamic registration to ToolRegistry
+- Supports stdio + SSE dual transport
+
+### External Tool Discovery
+- Auto-discover and register executables in `workspace/tools/` directory
+- Supports bash, python3, perl, and other scripts
+
+## 🔒 Security Features
 
 ### Permission System
+- **Five-level permission categories**: read / write / delete / modify / execute
+- **Asynchronous user authorization**: Web Dashboard pushes authorization requests via WebSocket
+- **Cross-category bypass detection**: Prevents bypassing file_delete permissions via shell_exec
 
-RustAgent implements a dual-layer security model: Category-based Gates + Intent Policy:
+### Command Intent Policy
+- **Semantic parsing**: Extract verb + targets, replacing traditional string blacklists
+- **Three-level judgment**:
+  - **Block**: Absolutely prohibited (disk formatting, security log clearing, etc.)
+  - **Audit**: Audit pass (file deletion, process termination, etc., logged)
+  - **Pass**: Silent pass (read-only queries, etc.)
+- **Linux-specific rules**:
+  - Block: `rm -rf /`, `dd of=/dev/sda`, `mkfs`, fork bombs, etc.
+  - Audit: `rm`, `kill`, `systemctl stop`, mount operations, etc.
+  - Pass: `ps`, `ls`, `netstat`, `cat`, etc.
 
-- **Five permission categories**: read / write / delete / modify / execute — each tool call declares its required permission category
-- **Async user authorization**: When the Agent requests high-privilege operations, it pushes an authorization request to the Dashboard via WebSocket. The user confirms through the UI, and the result is returned via a oneshot channel — the Agent loop waits without blocking
-- **Command Intent Policy Engine**: Replaces traditional blacklists with semantic parsing (verb + targets) of shell_exec commands, three-tier verdicts:
-  - **Block** (absolute prohibition): Disk formatting, security log clearing, encoded commands — irreversible operations hard-blocked regardless of any authorization state
-  - **Audit** (logged pass-through): File deletion, process termination, service stops — high-risk but legitimate operations, logged then executed normally
-  - **Pass** (silent pass-through): Read-only queries and routine operations
-- **Linux SSH Command Safety Policy**: Same IntentPolicy engine applied to `linux_ssh` remote commands. Parses bash/sh commands into structured intent (verb + targets), with Linux-specific rules:
-  - **Block**: Root filesystem destruction (`rm -rf /`), direct disk writes (`dd of=/dev/sda`), disk formatting (`mkfs`), security log destruction, fork bombs, bootloader modification
-  - **Audit**: File deletion (`rm`), process termination (`kill`), service control (`systemctl stop`), config writes, mount operations
-  - **Pass**: Read-only commands (`ps`, `ls`, `netstat`, `cat`, etc.)
-- **Cross-category bypass detection**: When shell_exec is pre-authorized (execute:true) but the command intent maps to a denied permission category (e.g., delete:false), automatically escalates to require user confirmation — prevents LLM from bypassing file_delete permission control via shell_exec
-- **Permission denial strong feedback**: On denial, returns strongly-worded error messages to the LLM prohibiting fallback to alternative tools
+### Other Security Features
+- **API key encryption**: AES-256-GCM, key derived from machine-id
+- **Password-protected Dashboard**: `.password` file protection
+- **CDP browser isolation**: chromiumoxide independent instance, no user login state
+- **Permission denial strong feedback**: Returns strong error messages to LLM on denial
 
-### Memory System
+## 🧠 Memory System
 
-Dual-layer memory architecture balancing real-time retrieval with long-term investigation experience accumulation — insights gathered during each investigation are distilled into reusable knowledge, automatically referenced when similar issues arise:
+### SQLite + FTS5 Conversation Memory
+- 4-layer schema evolution
+- CJK bigram tokenization (optimized for Chinese/Japanese/Korean)
+- BM25-ranked full-text search
+- Automatic conversation history cleanup (3 days/50 entries)
 
-**SQLite + FTS5 Conversational Memory**
-- 4-layer schema evolution: basic conversations → FTS5 full-text index → checkpoints → usage statistics
-- CJK bigram tokenization: unicode61 tokenizer optimized for Chinese/Japanese/Korean, with space insertion between single characters to support bigram retrieval
-- BM25-ranked full-text search, conversation history auto-cleanup at 3 days / 50 entries
-- Separate conversations_fts table to avoid coupling with the main table
+### Knowledge Distillation
+- Auto-triggered at session end
+- LLM extracts structured knowledge entries
+- Writes to 5 category files under `workspace/knowledge/`
+- Append-only design, write-only, no modifications
 
-**Knowledge Distillation**
-- Automatically triggered at session end: detects WebSocket disconnect, minimum 4-message threshold
-- LLM extracts structured knowledge entries, written to 5 categorized files under `workspace/knowledge/`: facts / decisions / lessons / preferences / skill_hints
-- Append-only design — never modifies existing entries, preventing knowledge pollution
-- Each record carries rich metadata: title, trigger, context, source, confidence
+### File Memory (MEMORY.md)
+- LLM-maintained personal notes
+- Auto-injected into System Prompt
+- Complements SQLite memory
 
-**File Memory (MEMORY.md)**
-- Personal notes actively maintained by the LLM, automatically injected into System Prompt
-- Three categories: user (user profile), memory (environment notes), daily (daily logs)
-- Complements SQLite memory: MEMORY.md for high-priority context, SQLite for high-volume historical retrieval
+## ⏰ Scheduling System
 
-### Scheduler
+- **CRON expressions**: Standard 5-field (minute hour day month weekday)
+- **Interval syntax**: `every 5m`, `every 2h`, and other natural language styles
+- **JSON persistence**: Task definitions stored in `cron_tasks.json`
+- **30-second polling**: Scheduler checks due tasks every 30 seconds
+- **Heartbeat mechanism**: Reads periodic health check checklist from `HEARTBEAT.md`
 
-Built-in lightweight task scheduler supporting periodic inspections and automated monitoring, without relying on system-level cron:
+## 📊 CLI Output
 
-- **CRON expressions**: Standard 5-field (minute hour day month weekday), timezone support
-- **Interval syntax**: Natural language style like `every 5m`, `every 2h`
-- **JSON persistence**: Task definitions stored in `cron_tasks.json`, survives restarts
-- **30-second polling**: Scheduler checks for due tasks every 30 seconds, executes via independent Agent sessions
-- **Heartbeat mechanism**: Reads periodic health check checklists from `HEARTBEAT.md`, only notifies users on anomalies, auto-skips when empty
+### Output Stream Separation
+- **stdout**: Only agent's final answer (`TextDelta`)
+- **stderr**: All execution process (thinking, tool calls, results, errors)
 
-### Tool System
+### Event Types
+| Icon | Event | Description |
+|------|-------|-------------|
+| 💭 | Thinking | Agent's reasoning process |
+| 🔧 | ToolCall | Tool calls and arguments |
+| ✅ | ToolResult | Tool execution results |
+| ⏳ | Progress | Progress for long-running tools |
+| ❌ | Error | Error messages |
+| 📝 | TextDelta | Agent's final answer |
 
-34+ built-in tools designed around IT engineers' core workflows, forming a complete toolchain from routine system checks to deep security analysis:
+### Usage Examples
 
-**File Operations** (5 tools): FileRead / FileWrite / FileDelete / FileModify / FileList — foundational capabilities for log file analysis and configuration file auditing
+```bash
+# View complete execution process
+RustAgent cli "Check disk space" 2>&1
 
-**System Tools**: ShellExecTool (PowerShell/CMD) — engineers can drive any system command via natural language, the Agent automatically selects appropriate commands and interprets output. Built-in Intent Policy Engine performs semantic-level command analysis: absolutely prohibits irreversible catastrophic operations (disk formatting, security log clearing), audit-logs high-risk but legitimate operations (file deletion, process termination), silently passes routine read-only commands
+# Save only agent's answer
+RustAgent cli "Check disk space" > answer.txt
 
-**Incident Response Toolkit** (14 tools, the IT investigation core):
+# Save complete log
+RustAgent --mode expert cli "Analyze system" > full_log.txt 2>&1
+```
 
-| Tool | Capability | Typical Investigation Use |
-|------|-----------|--------------------------|
-| Process Analysis | Process tree enumeration, resource usage, command-line args | Identify suspicious processes, miners, fileless attacks |
-| Network Connections | TCP/UDP connections, listening ports, associated processes | Detect C2 communication, anomalous outbound, lateral movement |
-| Registry Audit | Run/RunOnce, service config, policy keys | Detect persistence backdoors, policy tampering |
-| Service Enumeration | Service status, start type, binary paths | Find malware disguised as system services |
-| Scheduled Tasks | schtasks enumeration, trigger analysis | Detect timed persistence payloads |
-| User Accounts | Local users, group membership, recent logins | Investigate account hijacking, new backdoor accounts |
-| Firewall Rules | Inbound/outbound rules, allow/block policies | Analyze network access control, find anomalous allowances |
-| Event Logs | System/Security/Application log retrieval | **Log investigation core**: filter by time/level/source, correlate analysis |
-| Port Scanning | Local port reachability detection | Verify service exposure, troubleshoot port conflicts |
-| Autoruns Persistence | Full persistence location scan | One-click complete attack surface, equivalent to Sysinternals Autoruns |
-| Web Log Scan | HTTP log security analysis (SQLi/XSS/RCE/directory traversal/scanners) | Detect web attack traces, anomalous request patterns, attacker IP statistics |
-| EVTX Parser | Offline Windows Event Log parsing, 60+ Event ID risk classification | Remote forensics, security event filtering (auth failures/service installs/Sysmon/log clearing) |
-| Generic Log Parser | Auto-detect log format (Syslog/CSV/Windows), security pattern matching | Multi-source log aggregation, severity classification, security event detection (27 patterns) |
-| PCAP Traffic Analysis | Offline pcap/pcapng parsing, protocol distribution, flow tracking, DNS/HTTP extraction, suspicious port detection | Network traffic forensics, C2 communication discovery, DNS tunneling detection, anomalous connection analysis |
+## 🔗 LongHorizon-Harness Integration
 
-These 14 tools can be automatically orchestrated by the Agent — engineers only need to describe the investigation goal, and the Agent calls multiple tools in logical order, cross-correlates results, and outputs structured reports. For example, when investigating "system is slow after boot", the Agent might execute: Process Analysis (find high-CPU processes) → Network Connections (check for anomalous outbound connections) → Autoruns (trace launch origin) → Event Logs (find related system events in the timeframe).
+RustAgent supports running as an agent backend for LongHorizon-Harness:
 
-**Malware Analysis**: Boreal YARA rule scanning (custom rule sets, local file loading) + PE deep analysis (goblin parsing of imports/sections/resources + iced-x86 disassembly of key functions) for static analysis of suspicious files
+```bash
+# Harness command template
+RustAgent --profile headless \
+  --prompt-file {prompt_path} \
+  --timeout {seconds} \
+  --auto-approve
+```
 
-**Browser Automation**: chromiumoxide CDP isolated browser (no login state, for safe browsing) + user browser control (BSK extension, for operations requiring login state)
+- `--prompt-file`: Read task from file
+- `--timeout`: Execution timeout control
+- `--auto-approve`: Auto-approve all permissions
+- `--trajectory`: JSONL trajectory output
 
-**Web Tools**: WebFetch (page content retrieval and analysis) / WebSearch (vulnerability intelligence, CVE information) / ImageSearch / ImageGen
+Python adapter: `adapters/rustagent_adapter.py`
 
-**Productivity Tools**: TodoWrite (investigation task planning and progress tracking), AskUserQuestion (confirm key decisions with engineers during investigations), CronManage (scheduled inspection task management)
+## 📁 Configuration
 
-**MCP Dynamic Tools**: Connect to external tool servers (e.g., SIEM, CMDB) via MCP protocol, dynamically registered at runtime, extending investigation capability boundaries
+### Working Directory
 
-**External Tool Discovery**: Executables under `workspace/tools/` are automatically discovered and registered — engineers can incorporate their own analysis scripts into the Agent toolchain
+**Linux**: `~/.RustAgent/workspace/`  
+**Windows**: `%USERPROFILE%\.RustAgent\workspace\`
 
-### MCP Integration
+### Directory Structure
 
-Full MCP client implementation based on rmcp v1.8.0:
+```
+workspace/
+├── config.toml          # Main configuration
+├── models.json          # Model configuration (API Key encrypted)
+├── mcp_servers.json     # MCP server configuration
+├── cron_tasks.json      # Scheduled task definitions
+├── .password            # Dashboard access password (Web mode only)
+├── memory/
+│   └── memory.db        # SQLite memory database
+├── knowledge/           # Knowledge distillation output
+├── skills/              # Skill directory
+├── tools/               # External tool directory
+├── logs/                # Runtime logs (rustagent-YYYY-MM-DD.N.log)
+├── static/              # Dashboard static assets
+└── output/              # Tool outputs
+```
 
-- **Dual transport**: stdio (subprocess) + SSE/StreamableHTTP (remote services)
-- **Dynamic tool registration**: After MCP server connection, its tools are automatically merged into ToolRegistry
-- **Encrypted authentication**: AES-256-GCM encrypted auth_token storage, key derived from Windows MachineGuid
-- **Multi-server management**: Supports simultaneous connections to multiple MCP servers with a unified tool namespace
+### Configuration File Examples
 
-### Skill System
+**config.toml**:
+```toml
+[server]
+host = "127.0.0.1"
+port = 7788
 
-Progressive-loading procedural knowledge base, distinct from declarative knowledge:
+[agent]
+working_dir = "."
+max_iterations = 100
+mode = "instant"  # or "expert"
+timezone_offset = 8
+```
 
-- **Directory structure**: `skills/{Name}/SKILL.md` + optional reference.md and other attachments
-- **Weighted scoring match**: name(×4) + description(×2.5) + triggers(×2) + body(×1), sqrt-normalized
-- **CJK-aware tokenization**: Correctly tokenizes mixed Chinese-English content
-- **Meta-tool design**: Skills are not pre-loaded into the prompt; activated on-demand via find_matching(), saving tokens
-- **Frontmatter convention**: YAML header always uses yaml_quote() to prevent colon-value parsing errors
+**models.json**:
+```json
+[
+  {
+    "name": "deepseek-v4-flash",
+    "api_base": "https://api.deepseek.com",
+    "api_key": "your-key-here",
+    "context_window": 128000,
+    "max_tokens": 16384
+  }
+]
+```
 
-### Security Features
-
-- **API key encryption**: AES-256-GCM at-rest encryption, key derived from Windows MachineGuid, stored in `models.json`
-- **Command Intent Policy**: Semantic-parsing-based three-tier command safety evaluation (Block/Audit/Pass), replacing traditional string blacklists
-- **Cross-category bypass defense**: Detects LLM attempts to bypass file_delete permission control via shell_exec, automatically escalates to require user confirmation
-- **Absolute prohibition list**: Disk formatting (Format-Volume/Clear-Disk), security log clearing (Clear-EventLog Security), boot record destruction (bcdedit/bootrec), encoded commands (-EncodedCommand) — hard-blocked regardless of permission state, cannot be overridden
-- **Password-authenticated Dashboard**: `.password` file-protected Web interface access control
-- **CDP browser isolation**: chromiumoxide runs in an independent Chromium instance with no user login state
-
-### Checkpoint & Crash Recovery
-
-- Persists conversation history to SQLite after each tool round
-- Recovers context from the latest checkpoint after unexpected disconnections
-- Supports conversation summary compression to reduce historical token usage
-
-### Dashboard
-
-Password-authenticated SPA covering the full Agent lifecycle management:
-
-- **Chat**: Real-time conversation, streaming output, tool call visualization
-- **Settings**: Model configuration, Agent parameter tuning
-- **Skills**: Skill browsing, creation, editing, deletion
-- **MCP**: MCP server management and status monitoring
-- **History**: Conversation history search and replay
-- **CRON**: Scheduled task management (add, edit, delete, enable/disable)
-- **Tools**: Built-in and external tool listing
-- **Memory**: Memory content viewing and management
-- **Usage**: Token usage analytics charts
-
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Component | Technology |
-|-----------|-----------|
+|-----------|------------|
 | Runtime | Tokio (full features) |
 | HTTP/WS | Axum 0.8 |
 | LLM Protocol | OpenAI-compatible streaming |
@@ -207,98 +360,44 @@ Password-authenticated SPA covering the full Agent lifecycle management:
 | Browser | chromiumoxide (CDP) |
 | Encryption | aes-gcm (AES-256-GCM) |
 | YARA | boreal (rule scanning) |
-| PE Parsing | goblin + iced-x86 (disassembly) |
+| PE Parser | goblin + iced-x86 |
+| SSH | russh (SSH client) |
 | Serialization | serde + serde_json + serde_yaml + toml |
-| Log Analysis | regex (pattern matching) + evtx (EVTX parsing) |
-| Traffic Analysis | pcap-parser (pcap/pcapng offline parsing) |
-| Logging | tracing + tracing-subscriber (env-filter) |
+| Log Analysis | regex + pcap-parser |
+| Logging | tracing + tracing-subscriber |
+| CLI | clap (derive) |
 
-## Configuration
-
-Runtime workspace directory: `%USERPROFILE%\.RustAgent\workspace\`
-
-```
-workspace/
-├── config.toml          # Main config (Server / Agent / Model)
-├── models.json          # Model config (API keys encrypted)
-├── mcp_servers.json     # MCP server config
-├── cron_tasks.json      # Scheduled task definitions
-├── .password            # Dashboard access password
-├── memory/
-│   └── memory.db        # SQLite memory database
-├── knowledge/           # Knowledge distillation output (append-only)
-├── skills/              # Skill directory
-├── tools/               # External tools directory
-├── logs/                # JSONL conversation logs
-├── static/              # Dashboard static assets
-└── output/              # Tool output (screenshots, reports, etc.)
-```
-
-## Build & Run
+## 📦 Building
 
 ```bash
-# Build release binary (~28MB, LTO + strip)
+# Build release version (~30MB, LTO + strip)
 cargo build --release
 
-# Binary output
-target/release/RustAgent.exe
+# Run tests
+cargo test
 
-# First run automatically creates workspace directory structure
-.\target\release\RustAgent.exe
+# Code check
+cargo check
 ```
 
-Release profile: `opt-level = 3`, `lto = true`, `strip = true` — ensuring minimal binary size and optimal runtime performance.
+Release profile: `opt-level = 3`, `lto = true`, `strip = true`
 
-## Project Structure
+## 📚 Documentation
 
-```
-src/
-├── main.rs              # Entry: workspace init, dependency wiring, server start
-├── server.rs            # Axum HTTP/WS server, REST API, SSE streaming
-├── config.rs            # TOML config loading
-├── agent/
-│   ├── mod.rs           # Agent trait, EventStream type
-│   ├── llm_agent.rs     # LlmAgent: Agentic Loop, tool execution, history trimming
-│   └── event.rs         # AgentEvent (9 event types)
-├── model/
-│   ├── mod.rs           # Llm trait, ChatMessage, ToolDefinition
-│   └── openai.rs        # OpenAI-compatible streaming client
-├── tool/
-│   ├── mod.rs           # Tool trait, ToolRegistry, binary resolution
-│   ├── file_ops.rs      # File operations (5 tools)
-│   ├── shell_exec.rs    # Shell execution (Intent Policy integration)
-│   ├── mcp_client.rs    # MCP client manager
-│   ├── memory_md.rs     # MEMORY.md read/write
-│   ├── cron_manage.rs   # CRON task management
-│   ├── todo_update.rs   # Task planning & tracking
-│   ├── ir_*.rs          # Incident response tools (14, incl. log + traffic analysis)
-│   └── malware_*.rs     # Malware analysis (YARA + PE)
-├── permission.rs        # Permission checker (category gates + async auth + cross-category bypass detection)
-├── policy/              # Command Intent Policy Engine
-│   ├── mod.rs           # IntentPolicy + LinuxIntentPolicy (Block/Audit/Pass)
-│   ├── parse.rs         # Windows PS/CMD intent parser (verb + targets)
-│   ├── rules.rs         # Windows BlockRule + AuditRule
-│   ├── linux_parse.rs   # Linux bash/sh intent parser
-│   └── linux_rules.rs   # Linux BlockRule + AuditRule
-├── memory.rs            # MemoryStore (SQLite + FTS5)
-├── distill.rs           # Knowledge distillation engine
-├── scheduler.rs         # CRON scheduler
-├── heartbeat.rs         # Heartbeat health checks
-├── skill/
-│   ├── mod.rs           # SkillManager
-│   └── types.rs         # SelectionPolicy, weighted scoring
-├── crypto.rs            # AES-256-GCM encryption
-├── checkpoint.rs        # Conversation checkpoint (crash recovery)
-├── runner.rs            # Session management, Agent dispatch
-├── context.rs           # Context hierarchy (Readonly → Callback → Tool)
-├── callbacks.rs         # Lifecycle hooks
-├── error.rs             # Structured errors
-├── model_store.rs       # Model config persistence (encrypted API keys)
-├── external_tools.rs    # External tool discovery
-├── log/                 # JSONL logging
-└── web/                 # Static file serving
-```
+- [CLI_OUTPUT_IMPROVEMENTS.md](CLI_OUTPUT_IMPROVEMENTS.md) - CLI output improvements details
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) - v1.0.0 release notes
+- [HARNESS_INTEGRATION.md](HARNESS_INTEGRATION.md) - LongHorizon-Harness integration guide
 
-## License
+## 🙏 Acknowledgments
+
+Original project: [AI_IT_AGENT](https://github.com/wolf0x/AI_IT_AGENT) by wolf0x
+
+This project evolved from a Windows IR-specific tool to a cross-platform general-purpose agent, preserving the core Agent architecture and tool system design.
+
+## 📄 License
 
 MIT
+
+---
+
+**RustAgent - Cross-platform general-purpose AI agent, evolving from Windows IR to general-purpose automation** 🚀
