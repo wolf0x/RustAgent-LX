@@ -525,8 +525,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build agent using builder pattern (ADK-RUST style)
     let agent = LlmAgent::builder()
-        .name("RustAgent")
-        .description("Local AI agent with Windows system tools")
+        .name("RustAgentX")
+        .description("Cross-platform AI agent")
         .provider(provider)
         .tools(shared_tools.clone())
         .skill_manager(skill_manager.clone())
@@ -545,7 +545,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .agent(agent)
         .logger(logger.clone())
         .checkpointer(checkpointer)
-        .app_name("RustAgent")
+        .app_name("RustAgentX")
         .build()
         .map_err(|e| format!("Failed to build runner: {}", e))?;
     let runner = Arc::new(runner);
@@ -661,7 +661,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Headless mode: execute task from positional argument
             let task = resolved.task.clone().unwrap_or_default();
             if task.is_empty() {
-                eprintln!("Usage: RustAgent [OPTIONS] <TASK>");
+                eprintln!("Usage: RustAgentX [OPTIONS] <TASK>");
                 eprintln!("Example: RustAgentX --profile headless \"运行测试套件并报告失败的测试\"");
                 return Err("No task provided.".into());
             }

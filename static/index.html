@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache">
-<title>RustAgent</title>
+<title>RustAgentX</title>
 <script>
 /**
  * marked v15.0.12 - a markdown parser
@@ -613,7 +613,7 @@ input:checked+.slider:before{transform:translateX(20px)}
       <div class="sidebar-hdr-row">
         <div class="sidebar-logo" id="sidebarLogo">🐺</div>
         <div>
-          <h2>RustAgent</h2>
+          <h2>RustAgentX</h2>
           <p>AI System Agent By W@L4</p>
         </div>
       </div>
@@ -863,7 +863,7 @@ input:checked+.slider:before{transform:translateX(20px)}
           <h3>&#9200; CRON Tasks</h3>
           <div style="padding:10px 12px;background:#fffaf3;border-left:3px solid #f39c12;border-radius:var(--rs);margin-bottom:14px;font-size:12px;color:#7d6608;line-height:1.5">
             <strong>Note:</strong> CRON tasks are application-level 鈥?results are shown in chat.
-            For system-level tasks that run independently (even when RustAgent is closed),
+            For system-level tasks that run independently (even when RustAgentX is closed),
             ask the agent to create a Windows scheduled task via <code>schtasks</code>.
           </div>
           <div id="cronAddForm" style="margin-bottom:16px">
@@ -1553,7 +1553,7 @@ async function exportSelectedHtml(){
   // Embed the page's real stylesheet so the export looks identical to the chat.
   var css='';
   document.querySelectorAll('style').forEach(function(s){css+=s.textContent+'\n';});
-  var html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>RustAgent Chat Export</title><style>'
+  var html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>RustAgentX Chat Export</title><style>'
     +css
     +'\n/* ── Export overrides ── */\n'
     +'html,body{height:auto;overflow:visible}\n'
@@ -1563,7 +1563,7 @@ async function exportSelectedHtml(){
     +'.ex-sub{font-size:12px;color:rgba(255,255,255,.85);margin-bottom:16px}\n'
     +'.ex-conv{background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3);padding:20px;display:flex;flex-direction:column;gap:12px}\n'
     +'</style></head><body><div class="ex-page">'
-    +'<div class="ex-hdr">&#129302; RustAgent Chat Export</div>'
+    +'<div class="ex-hdr">&#129302; RustAgentX Chat Export</div>'
     +'<div class="ex-sub">'+sel.length+' message(s) &middot; '+esc(new Date().toLocaleString())+'</div>'
     +'<div class="ex-conv">'+bodyHtml+'</div></div></body></html>';
   var blob=new Blob([html],{type:'text/html'});
@@ -2509,9 +2509,9 @@ function showNotification(message, timestamp, skipHist){
   if(!skipHist){
     const plainText = message.replace(/[*#_~`\[\]]/g, '').substring(0, 200);
     if('Notification' in window && Notification.permission==='granted'){
-      new Notification('RustAgent Reminder',{body:plainText,icon:''});
+      new Notification('RustAgentX Reminder',{body:plainText,icon:''});
     } else if('Notification' in window && Notification.permission!=='denied'){
-      Notification.requestPermission().then(p=>{if(p==='granted')new Notification('RustAgent Reminder',{body:plainText})});
+      Notification.requestPermission().then(p=>{if(p==='granted')new Notification('RustAgentX Reminder',{body:plainText})});
     }
     addLog('Reminder delivered','info');
     // Persist notification to history
@@ -2860,7 +2860,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   checkCheckpoints();
   loadOutputs();
   loadTodos();
-  if(!msgHist.length)addLog('RustAgent ready','info');
+  if(!msgHist.length)addLog('RustAgentX ready','info');
   updateStatus();
   const modelSel=document.getElementById('modelSel');
   const fallbackSel=document.getElementById('fallbackSel');

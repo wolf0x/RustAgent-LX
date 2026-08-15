@@ -332,7 +332,7 @@ impl Config {
 
     /// Generate a minimal config.toml in the workspace with essential fields only.
     fn generate_default(workspace_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let config_content = r#"# RustAgent Configuration
+        let config_content = r#"# RustAgentX Configuration
 # Models are managed via models.json, MCP servers via mcp_servers.json.
 # Settings can also be changed via the Web UI Settings page.
 

@@ -203,8 +203,8 @@ pub struct LlmAgentBuilder {
 impl LlmAgentBuilder {
     pub fn new() -> Self {
         Self {
-            name: "RustAgent".to_string(),
-            description: "Local AI agent with Windows system tools".to_string(),
+            name: "RustAgentX".to_string(),
+            description: "Cross-platform AI agent".to_string(),
             provider: None,
             tools: None,
             skill_manager: None,
@@ -378,7 +378,7 @@ impl LlmAgent {
                 .to_string()
         };
         let mut prompt = format!(
-            "You are RustAgent, a powerful local AI assistant running on the user's Windows machine. \
+            "You are RustAgentX, a powerful local AI assistant running on the user's machine. \
 You have FULL ACCESS to the user's system via built-in tools.\n\
 **Current date: {today}**\n\n\
 ## LANGUAGE RULE (STRICT - THIS message)\n\
@@ -494,7 +494,7 @@ When the user DENIES a tool permission (you receive 'PERMISSION DENIED'):\n\
 - A permission denial means the user does NOT want this action to happen — regardless of which tool performs it.\n",
         );
 
-        // ── Scheduled Tasks: RustAgent CRON vs System Cron ──
+        // ── Scheduled Tasks: RustAgentX CRON vs System Cron ──
         prompt.push_str(
             "\n## Scheduled Tasks: CRON vs System Tasks\n\
 You have TWO ways to create scheduled tasks. You MUST distinguish between them:\n\n\
