@@ -734,10 +734,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
 
                         match &event {
-                            agent::AgentEvent::Thinking { content, .. } => {
-                                // Show thinking process in CLI mode
-                                eprintln!("\n💭 Thinking...\n{}", content);
-                            }
                             agent::AgentEvent::TextDelta { content, .. } => {
                                 print!("{}", content);
                                 use std::io::Write;
