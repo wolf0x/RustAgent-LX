@@ -1,11 +1,11 @@
 //! CLI argument parsing and mode resolution.
 //!
 //! Mode selection:
-//!   RustAgent web [OPTIONS]              → Web dashboard mode
-//!   RustAgent cli [OPTIONS] <TASK>       → Headless CLI mode
-//!   RustAgent --profile web [OPTIONS]    → Same as `web`
-//!   RustAgent --profile headless <TASK>  → Same as `cli`
-//!   RustAgent --profile cli <TASK>       → Same as `cli`
+//!   RustAgentX web [OPTIONS]              → Web dashboard mode
+//!   RustAgentX cli [OPTIONS] <TASK>       → Headless CLI mode
+//!   RustAgentX --profile web [OPTIONS]    → Same as `web`
+//!   RustAgentX --profile headless <TASK>  → Same as `cli`
+//!   RustAgentX --profile cli <TASK>       → Same as `cli`
 //!
 //! Without arguments, prints help.
 //!
@@ -14,9 +14,9 @@
 
 use clap::Parser;
 
-/// RustAgent — Cross-platform general-purpose AI agent
+/// RustAgentX — Cross-platform general-purpose AI agent
 #[derive(Parser, Debug)]
-#[command(name = "RustAgent", version, about)]
+#[command(name = "RustAgentX", version, about)]
 pub struct Cli {
     /// Mode: "web" (dashboard) or "cli" (headless automation).
     /// Remaining args after "cli" are the task text.
@@ -265,8 +265,8 @@ impl Cli {
         // Headless mode requires a task
         if mode == RunMode::Headless && task.is_none() {
             eprintln!("Error: cli/headless mode requires a task.");
-            eprintln!("Usage: RustAgent cli \"your task here\"");
-            eprintln!("       RustAgent --profile headless \"your task here\"");
+            eprintln!("Usage: RustAgentX cli \"your task here\"");
+            eprintln!("       RustAgentX --profile headless \"your task here\"");
             return None;
         }
 

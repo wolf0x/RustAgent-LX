@@ -5,7 +5,7 @@ edition = "2021"
 description = "Cross-platform general-purpose AI agent with WebSocket gateway, multi-model support, and 30+ built-in tools"
 
 [[bin]]
-name = "RustAgent"
+name = "RustAgentX"
 path = "src/main.rs"
 
 [dependencies]

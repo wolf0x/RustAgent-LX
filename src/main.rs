@@ -277,7 +277,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_ansi(false)
         .init();
 
-    info!("Starting RustAgent (pid {})", std::process::id());
+    info!("Starting RustAgentX (pid {})", std::process::id());
     info!("Mode: {:?}", resolved.mode);
     if let Some(ref profile) = resolved.profile {
         info!("Profile: {}", profile);
@@ -662,11 +662,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let task = resolved.task.clone().unwrap_or_default();
             if task.is_empty() {
                 eprintln!("Usage: RustAgent [OPTIONS] <TASK>");
-                eprintln!("Example: RustAgent --profile headless \"运行测试套件并报告失败的测试\"");
+                eprintln!("Example: RustAgentX --profile headless \"运行测试套件并报告失败的测试\"");
                 return Err("No task provided.".into());
             }
 
-            info!("=== RustAgent Headless Mode ===");
+            info!("=== RustAgentX Headless Mode ===");
             info!("Task: {}", task);
             if let Some(ref profile) = resolved.profile {
                 info!("Profile: {}", profile);
@@ -786,7 +786,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let app = server::create_router(state);
             let addr = format!("{}:{}", config.server.host, config.server.port);
 
-            info!("=== RustAgent is running ===");
+            info!("=== RustAgentX is running ===");
             info!("Local:   http://localhost:{}", config.server.port);
             info!("Network: http://{}:{}", get_local_ip(), config.server.port);
             info!("Password: {}", password);
