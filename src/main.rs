@@ -734,17 +734,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
 
                         match &event {
+                            agent::AgentEvent::Thinking { content, .. } => {
+                                // Show thinking process in CLI mode
+                                eprintln!("\n💭 Thinking...\n{}", content);
+                            }
                             agent::AgentEvent::TextDelta { content, .. } => {
                                 print!("{}", content);
                                 use std::io::Write;
                                 let _ = std::io::stdout().flush();
                             }
-                            agent::AgentEvent::Error { message, .. } => {
-                                eprintln!("\n[ERROR] {}", message);
-                                exit_code = 1;
+                            agent::AgentEvent::ToolCall { name, args, .. } => {
+                                // Show tool calls in CLI mode
+                                eprintln!("\n🔧 Calling tool: {}", name);
+                                if !args.is_null() && !args.as_object().map(|m| m.is_empty()).unwrap_or(true) {
+                                    eprintln!("   Args: {}", serde_json::to_string_pretty(args).unwrap_or_default());
+                                }
                             }
-                            agent::AgentEvent::ToolCall { name, .. } => {
-                                info!("[headless] Tool call: {}", name);
+                            agent::AgentEvent::ToolResult { name, result, .. } => {
+                                // Show tool results in CLI mode (truncated if too long)
+                                let result_str = serde_json::to_string_pretty(result).unwrap_or_default();
+                                let display_str = if result_str.len() > 500 {
+                                    format!("{}... (truncated, {} chars total)", &result_str[..500], result_str.len())
+                                } else {
+                                    result_str
+                                };
+                                eprintln!("\n✅ Tool result: {}\n{}", name, display_str);
+                            }
+                            agent::AgentEvent::Progress { tool_name, message, elapsed_secs, .. } => {
+                                // Show progress for long-running tools
+                                eprintln!("⏳ [{}s] {} - {}", elapsed_secs, tool_name, message);
+                            }
+                            agent::AgentEvent::Error { message, .. } => {
+                                eprintln!("\n❌ [ERROR] {}", message);
+                                exit_code = 1;
                             }
                             _ => {}
                         }
