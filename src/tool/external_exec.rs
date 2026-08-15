@@ -76,16 +76,10 @@ impl Tool for ExternalToolExecutor {
         );
 
         let result = match self.extension.as_str() {
-            "ps1" => {
-                // PowerShell scripts need to be invoked via powershell -File
-                let mut cmd = Command::new("powershell");
-                cmd.arg("-NoProfile")
-                    .arg("-NonInteractive")
-                    .arg("-ExecutionPolicy")
-                    .arg("Bypass")
-                    .arg("-File")
-                    .arg(&self.path);
-                // Append user args (split by whitespace for ps1)
+            "sh" | "bash" => {
+                // Shell scripts via bash
+                let mut cmd = Command::new("bash");
+                cmd.arg(&self.path);
                 if !cli_args.is_empty() {
                     for arg in shell_words_split(cli_args) {
                         cmd.arg(arg);
@@ -94,19 +88,20 @@ impl Tool for ExternalToolExecutor {
                 cmd.current_dir(&ctx.working_dir);
                 run_with_timeout(cmd, timeout_secs).await
             }
-            "bat" | "cmd" => {
-                // Batch scripts via cmd /c
-                let mut cmd = Command::new("cmd");
-                cmd.arg("/c")
-                    .arg(self.path.to_string_lossy().as_ref());
+            "py" => {
+                // Python scripts via python3
+                let mut cmd = Command::new("python3");
+                cmd.arg(&self.path);
                 if !cli_args.is_empty() {
-                    cmd.arg(cli_args);
+                    for arg in shell_words_split(cli_args) {
+                        cmd.arg(arg);
+                    }
                 }
                 cmd.current_dir(&ctx.working_dir);
                 run_with_timeout(cmd, timeout_secs).await
             }
             _ => {
-                // Direct executable (.exe)
+                // Direct executable
                 let mut cmd = Command::new(&self.path);
                 if !cli_args.is_empty() {
                     for arg in shell_words_split(cli_args) {

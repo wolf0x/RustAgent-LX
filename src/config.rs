@@ -20,7 +20,7 @@ pub struct AgentConfig {
     #[serde(default = "default_working_dir")]
     pub working_dir: String,
     /// Agent workspace directory — the agent's "home" where AGENTS.md, SOUL.md, TOOLS.md live.
-    /// Defaults to %USERPROFILE%\.RustAgent\workspace
+    /// Defaults to ~/.RustAgent/workspace (cross-platform)
     #[allow(dead_code)]
     #[serde(default = "default_workspace_dir")]
     pub workspace_dir: String,
@@ -38,16 +38,14 @@ pub struct AgentConfig {
     #[serde(default = "default_max_tool_retries")]
     pub max_tool_retries: usize,
     /// Enable parallel execution for read-only IR collection tools.
-    /// When true, tools like ir_scan, ir_process, ir_account, ir_persistence, ir_network
-    /// will execute concurrently via futures::join_all instead of sequentially.
-    /// This significantly speeds up incident triage (3-4x faster for full collection).
-    /// Default: true (enabled for IR workflow optimization)
     #[serde(default = "default_parallel_ir_tools")]
     pub parallel_ir_tools: bool,
-    /// Enable Computer Use (GUI control) tools — screenshot, mouse, keyboard, window management.
-    /// Default: false (disabled). Can be toggled at runtime via Settings UI.
+    /// Enable Computer Use (GUI control) tools.
     #[serde(default)]
     pub computer_use: bool,
+    /// Run mode: "instant" (fast, single-pass) or "expert" (thorough, multi-round)
+    #[serde(default = "default_mode")]
+    pub mode: String,
     /// Primary model name (selected in Settings UI)
     #[serde(default)]
     pub primary_model: Option<String>,
@@ -152,6 +150,7 @@ impl Default for Config {
                 max_tool_retries: default_max_tool_retries(),
                 parallel_ir_tools: default_parallel_ir_tools(),
                 computer_use: false,
+                mode: default_mode(),
                 primary_model: None,
                 fallback_model: None,
                 timezone_offset: default_timezone_offset(),
@@ -169,10 +168,12 @@ fn default_host() -> String { "127.0.0.1".to_string() }
 fn default_port() -> u16 { 7788 }
 fn default_working_dir() -> String { ".".to_string() }
 fn default_workspace_dir() -> String {
-    if let Ok(userprofile) = std::env::var("USERPROFILE") {
-        format!("{}\\.RustAgent\\Workspace", userprofile)
+    if let Ok(home) = std::env::var("HOME") {
+        format!("{}/.RustAgent/workspace", home)
+    } else if let Ok(userprofile) = std::env::var("USERPROFILE") {
+        format!("{}\\.RustAgent\\workspace", userprofile)
     } else {
-        ".Workspace".to_string()
+        ".workspace".to_string()
     }
 }
 fn default_max_iterations() -> usize { 100 }
@@ -182,6 +183,7 @@ fn default_context_window_threshold() -> usize { 80 }
 fn default_tool_timeout_secs() -> usize { 300 }
 fn default_max_tool_retries() -> usize { 2 }
 fn default_parallel_ir_tools() -> bool { true }
+fn default_mode() -> String { "instant".to_string() }
 fn default_max_tokens() -> u32 { 16384 }
 fn default_temperature() -> f64 { 0.7 }
 fn default_timezone_offset() -> i8 { 8 }
@@ -339,18 +341,16 @@ host = "127.0.0.1"
 port = 7788
 
 [agent]
-workspace_dir = "%USERPROFILE%\\.RustAgent\\Workspace"
 working_dir = "."
 max_iterations = 100
 rabbit_hole_threshold = 5
 context_window_threshold = 80
 tool_timeout_secs = 300
 max_tool_retries = 2
-# Enable parallel execution for IR collection tools (ir_scan, ir_process, etc.)
-# Set to false to force sequential execution for debugging or compatibility
+# Enable parallel execution for IR collection tools
 parallel_ir_tools = true
-# Enable Computer Use (GUI control) tools
-computer_use = false
+# Run mode: "instant" (fast, single-pass) or "expert" (thorough, multi-round)
+mode = "instant"
 # Primary and fallback model names (set via Settings UI)
 # primary_model = "gpt-4o"
 # fallback_model = ""
@@ -438,5 +438,42 @@ timezone_offset = 8
         config.agent.expert_max_managed_rounds = expert_max_managed_rounds;
 
         config.save(workspace_dir)
+    }
+
+    /// Apply CLI overrides to this config. CLI values take precedence over config file values.
+    pub fn apply_cli_overrides(&mut self, overrides: &crate::cli::ConfigOverrides) {
+        if let Some(ref host) = overrides.host {
+            self.server.host = host.clone();
+        }
+        if let Some(port) = overrides.port {
+            self.server.port = port;
+        }
+        if let Some(max_iterations) = overrides.max_iterations {
+            self.agent.max_iterations = max_iterations;
+        }
+        if let Some(tool_timeout) = overrides.tool_timeout_secs {
+            self.agent.tool_timeout_secs = tool_timeout;
+        }
+        if let Some(ref model) = overrides.primary_model {
+            self.agent.primary_model = Some(model.clone());
+        }
+        if let Some(ref fallback) = overrides.fallback_model {
+            self.agent.fallback_model = Some(fallback.clone());
+        }
+        if let Some(threshold) = overrides.context_window_threshold {
+            self.agent.context_window_threshold = threshold;
+        }
+        if let Some(threshold) = overrides.rabbit_hole_threshold {
+            self.agent.rabbit_hole_threshold = threshold;
+        }
+        if let Some(retries) = overrides.max_tool_retries {
+            self.agent.max_tool_retries = retries;
+        }
+        if let Some(parallel) = overrides.parallel_ir_tools {
+            self.agent.parallel_ir_tools = parallel;
+        }
+        if let Some(tz) = overrides.timezone_offset {
+            self.agent.timezone_offset = tz;
+        }
     }
 }

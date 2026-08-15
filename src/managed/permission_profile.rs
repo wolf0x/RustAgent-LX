@@ -146,32 +146,16 @@ pub fn check_preauthorization(
             let cmd = args["command"].as_str().unwrap_or("");
             let lower = cmd.to_lowercase();
 
-            // Process kill commands
-            if lower.contains("stop-process") || lower.contains("taskkill") {
+            // Process kill commands (Linux)
+            if lower.contains("kill ") || lower.contains("pkill ") || lower.contains("killall ") {
                 return profile.is_preauthorized(&PreauthorizedAction::KillProcess);
             }
 
-            // Service stop commands
-            if lower.contains("stop-service") || lower.contains("sc stop") {
+            // Service stop commands (Linux)
+            if lower.contains("systemctl stop") || lower.contains("service ") && lower.contains("stop") {
                 return profile.is_preauthorized(&PreauthorizedAction::StopService);
             }
 
-            false
-        }
-
-        "ir_persistence" => {
-            let action = args["action"].as_str().unwrap_or("");
-            if action == "remove" || action == "delete" {
-                return profile.is_preauthorized(&PreauthorizedAction::RemovePersistence);
-            }
-            false
-        }
-
-        "sys_process" => {
-            let action = args["action"].as_str().unwrap_or("");
-            if action == "kill" {
-                return profile.is_preauthorized(&PreauthorizedAction::KillProcess);
-            }
             false
         }
 

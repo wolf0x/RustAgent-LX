@@ -1,7 +1,5 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 
 use super::Tool;
 use crate::context::ToolContext;
@@ -112,18 +110,11 @@ impl Tool for SysRemindTool {
     }
 }
 
-/// Fallback: show notification via PowerShell MessageBox if HTTP notify fails.
+/// Fallback: log the notification if HTTP notify fails.
 fn show_fallback_notification(message: &str) {
-    let escaped = message.replace("'", "''");
-    let ps_cmd = format!(
-        "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('{}', 'RustAgent Reminder', 'OK', 'Information')",
-        escaped
-    );
-    // Fire-and-forget: spawn PowerShell detached
-    let _ = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &ps_cmd])
-        .creation_flags(0x00000008)
-        .spawn();
+    // On Linux, just log the message — no GUI notification available
+    tracing::info!("Reminder notification (fallback): {}", message);
+    let _ = message;
 }
 
 /// Parse delay strings like "2m", "30s", "1h", "90s", "1h30m"

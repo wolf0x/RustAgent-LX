@@ -17,23 +17,22 @@ use crate::error::AgentResult;
 pub fn tool_category(name: &str) -> &'static str {
     match name {
         // Read — pure information gathering, no side effects
-        "file_read" | "file_list" | "sys_info" | "sys_eventlog" | "browser_open" | "web_fetch"
-        | "ir_scan" | "ir_account" | "ir_persistence" | "ir_network" | "ir_eventlog"
-        | "ir_file" | "ir_artifacts" | "ir_driver" | "ir_analyzer" | "ir_report"
-        | "ir_weblog_scan" | "ir_evtx_parse" | "ir_log_parse" | "ir_pcap_analyze"
-        | "ir_usn" | "ir_timeline"
+        "file_read" | "file_list" | "browser_open" | "web_fetch"
+        | "ir_weblog_scan" | "ir_log_parse" | "ir_pcap_analyze"
         | "malware_scan" | "malware_deep"
-        | "cu_screenshot" | "cu_window_list" | "cu_clipboard_read" | "cu_display_info"
-        | "cu_cursor_position" | "cu_process_list" | "cu_ui_tree" | "cu_ui_find" => "read",
+        | "linux_ir_process" | "linux_ir_network" | "linux_ir_persistence"
+        | "linux_ir_rootkit" | "linux_ir_file" | "linux_ir_web"
+        | "linux_ir_mining" | "linux_ir_lateral" | "linux_ir_auth"
+        | "linux_ir_backdoor" | "linux_ir_bruteforce" | "linux_ir_integrity"
+        | "linux_ir_config" | "ir_linux" | "linux_ssh" | "ir_eml" | "ir_case" => "read",
         // Write — creates/overwrites content
-        "file_write" | "memory_md" | "todo_update" | "cu_clipboard_write" => "write",
+        "file_write" | "memory_md" | "todo_update" => "write",
         // Delete
         "file_delete" => "delete",
         // Modify — changes state of existing resources
-        "file_modify" | "sys_process" | "sys_service" | "ir_process" | "ir_vss"
-        | "browser_cdp" | "browser_skill" | "cron_manage" | "cu_window_activate" => "modify",
+        "file_modify" | "browser_cdp" | "browser_skill" | "cron_manage" => "modify",
         // Execute — arbitrary code execution
-        "shell_exec" | "app_launch" | "ir_memdump" | "cu_mouse" | "cu_keyboard" | "cu_process_kill" | "cu_ui_interact" => "execute",
+        "shell_exec" => "execute",
         // Default: unknown tools (MCP, external) require endorsement
         _ => "execute",
     }
@@ -117,7 +116,7 @@ impl PermissionChecker {
     /// Returns `true` if allowed, `false` if denied.
     pub async fn check(&self, tool_name: &str, args: &Value) -> bool {
         // Phase 6: pre-authorized actions (managed mode) bypass the permission gate.
-        // Intent-level matching keeps the bypass narrow (e.g., shell_exec taskkill only).
+        // Intent-level matching keeps the bypass narrow (e.g., shell_exec kill/pkill only).
         if let Some(profile) = &self.preauth_profile {
             if crate::managed::permission_profile::check_preauthorization(profile, tool_name, args) {
                 return true;
@@ -213,11 +212,11 @@ impl PermissionChecker {
     }
 }
 
-/// Detect if a shell_exec/app_launch command's intent maps to a different permission category.
+/// Detect if a shell_exec command's intent maps to a different permission category.
 /// Returns Some(category) if the command performs an action that belongs to another category,
 /// None if the intent is normal execution or cannot be determined.
 fn detect_intent_category(tool_name: &str, args: &Value) -> Option<&'static str> {
-    if tool_name != "shell_exec" && tool_name != "app_launch" {
+    if tool_name != "shell_exec" {
         return None;
     }
 
@@ -226,15 +225,18 @@ fn detect_intent_category(tool_name: &str, args: &Value) -> Option<&'static str>
         return None;
     }
 
-    let shell = args["shell"].as_str().unwrap_or("powershell");
-    let intent = crate::policy::parse::parse_intent(command, shell);
-
-    use crate::policy::parse::Verb;
-    match intent.verb {
-        // Deletion via shell_exec bypasses file_delete permission
-        Verb::Delete => Some("delete"),
-        // Format/disk operations bypass modify permission
-        Verb::Format => Some("modify"),
-        _ => None,
+    // Use Linux intent parser for command analysis
+    let policy = crate::policy::LinuxIntentPolicy::new();
+    match policy.evaluate(command) {
+        crate::policy::LinuxIntentVerdict::Block { .. } => Some("modify"),
+        crate::policy::LinuxIntentVerdict::Audit { reason } => {
+            // Check if the audit reason suggests deletion
+            if reason.contains("delet") || reason.contains("remov") || reason.contains("rm") {
+                Some("delete")
+            } else {
+                None
+            }
+        }
+        crate::policy::LinuxIntentVerdict::Pass => None,
     }
 }

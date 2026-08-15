@@ -423,31 +423,27 @@ impl Auditor {
     }
     /// Verify a process is no longer running.
     async fn verify_process_gone(&self, action_desc: &str) -> AuditResult {
-        // Extract process name from action description
-        // This is a simplified extraction — real implementation would parse more carefully
         let process_name = extract_process_name(action_desc);
 
         if process_name.is_empty() {
             return AuditResult::fail(action_desc, String::new(), "Could not extract process name from action description");
         }
 
-        // Run ir_process to check if process is still running
+        // Use shell_exec with ps to check if process is still running
         let registry = self.tools.read().await;
-        if let Some(tool) = registry.get("ir_process") {
+        if let Some(tool) = registry.get("shell_exec") {
             let ctx = ToolContext::simple(self.working_dir.clone(), self.workspace_dir.clone());
             let args = serde_json::json!({
-                "action": "list",
-                "filter": process_name
+                "command": format!("ps aux | grep -i '{}' | grep -v grep", process_name)
             });
 
             match tool.execute(args, &ctx).await {
                 Ok(result) => {
-                    let result_str = result.to_string();
-                    // Check if process is still in the list
-                    if result_str.to_lowercase().contains(&process_name.to_lowercase()) {
+                    let stdout = result["stdout"].as_str().unwrap_or("");
+                    if !stdout.trim().is_empty() {
                         AuditResult::fail(
                             action_desc,
-                            result_str.chars().take(500).collect(),
+                            stdout.chars().take(500).collect(),
                             &format!("Process '{}' still running", process_name),
                         )
                     } else {
@@ -458,11 +454,11 @@ impl Auditor {
                     }
                 }
                 Err(e) => {
-                    AuditResult::fail(action_desc, String::new(), &format!("ir_process failed: {}", e))
+                    AuditResult::fail(action_desc, String::new(), &format!("shell_exec failed: {}", e))
                 }
             }
         } else {
-            AuditResult::fail(action_desc, String::new(), "ir_process tool not available")
+            AuditResult::fail(action_desc, String::new(), "shell_exec tool not available")
         }
     }
 

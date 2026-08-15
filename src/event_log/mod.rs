@@ -300,7 +300,6 @@ pub fn compute_replay_stats(events: &[LogEvent]) -> ReplayStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::tempdir;
 
     #[test]
@@ -309,7 +308,7 @@ mod tests {
         let path = dir.path().join("test.jsonl");
 
         // Write events
-        let mut log = EventLog::create_new(&path).unwrap();
+        let mut log = EventLog::open(&path).unwrap();
 
         let event1 = LogEvent::RunStarted {
             run_id: "test-run-1".to_string(),
@@ -327,7 +326,6 @@ mod tests {
         };
         log.append(&event2).unwrap();
 
-        log.sync().unwrap();
         drop(log);
 
         // Read events back

@@ -5,7 +5,7 @@ use tokio::process::Command;
 use super::Tool;
 use crate::context::ToolContext;
 use crate::error::AgentResult;
-use crate::policy::{IntentPolicy, IntentVerdict};
+use crate::policy::{LinuxIntentPolicy, LinuxIntentVerdict};
 
 pub struct ShellExecTool;
 
@@ -13,7 +13,7 @@ pub struct ShellExecTool;
 impl Tool for ShellExecTool {
     fn name(&self) -> &str { "shell_exec" }
     fn description(&self) -> &str {
-        "Execute a command in PowerShell or CMD. Returns stdout, stderr, and exit code. Use shell='powershell' (default) or shell='cmd'.\n\n\
+        "Execute a shell command using bash. Returns stdout, stderr, and exit code.\n\n\
          IMPORTANT: DO NOT use this tool for SSH commands to remote Linux/Unix hosts. Use the 'linux_ssh' tool instead."
     }
     fn is_builtin(&self) -> bool { true }
@@ -22,7 +22,7 @@ impl Tool for ShellExecTool {
             "type": "object",
             "properties": {
                 "command": { "type": "string", "description": "Command to execute" },
-                "shell": { "type": "string", "description": "Shell to use: 'powershell' (default) or 'cmd'", "enum": ["powershell", "cmd"] },
+                "shell": { "type": "string", "description": "Shell to use: 'bash' (default) or 'sh'", "enum": ["bash", "sh"] },
                 "timeout_secs": { "type": "integer", "description": "Timeout in seconds (default 30)" }
             },
             "required": ["command"]
@@ -30,17 +30,16 @@ impl Tool for ShellExecTool {
     }
     async fn execute(&self, args: Value, _ctx: &ToolContext) -> AgentResult<Value> {
         let command = args["command"].as_str().ok_or_else(|| "Missing 'command'".to_string())?;
-        let shell = args["shell"].as_str().unwrap_or("powershell");
+        let shell = args["shell"].as_str().unwrap_or("bash");
         let timeout = args["timeout_secs"].as_u64().unwrap_or(30);
 
-        // ── Intent Policy evaluation (replaces legacy destructive_patterns) ──
-        // This layer operates independently of the Permission system:
+        // ── Intent Policy evaluation ──
         // - Block: catastrophic irreversible ops → hard reject regardless of permissions
-        // - Audit: high-risk but legitimate → log and proceed (transparent when pre-authorized)
+        // - Audit: high-risk but legitimate → log and proceed
         // - Pass: normal → silent
-        let policy = IntentPolicy::new();
-        match policy.evaluate(command, shell) {
-            IntentVerdict::Block { reason } => {
+        let policy = LinuxIntentPolicy::new();
+        match policy.evaluate(command) {
+            LinuxIntentVerdict::Block { reason } => {
                 return Err(format!(
                     "BLOCKED (safety interlock): {}. \
                      This operation is irreversible and cannot be executed through RustAgent. \
@@ -48,30 +47,22 @@ impl Tool for ShellExecTool {
                     reason
                 ).into());
             }
-            IntentVerdict::Audit { reason } => {
+            LinuxIntentVerdict::Audit { reason } => {
                 tracing::warn!(
                     "[AUDIT] shell_exec high-risk: {} | shell={} | command={}",
                     reason, shell, command
                 );
-                // Proceed — user has authorized via Permission gate or accepts risk
             }
-            IntentVerdict::Pass => { /* silent */ }
+            LinuxIntentVerdict::Pass => { /* silent */ }
         }
 
-        let mut cmd = match shell {
-            "cmd" => {
-                let mut c = Command::new("cmd");
-                c.args(["/C", command]);
-                c
-            }
-            _ => {
-                let mut c = Command::new("powershell");
-                c.args(["-NoProfile", "-NonInteractive", "-Command", command]);
-                c
-            }
+        let shell_bin = match shell {
+            "sh" => "sh",
+            _ => "bash",
         };
 
-        cmd.creation_flags(0x08000000);
+        let mut cmd = Command::new(shell_bin);
+        cmd.args(["-c", command]);
         cmd.kill_on_drop(true);
 
         let result = tokio::time::timeout(

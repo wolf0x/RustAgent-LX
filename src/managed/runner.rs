@@ -113,8 +113,8 @@ pub struct ManagedRunner {
     max_tool_retries: usize,
     /// Skill manager for injecting matched skills into Executor briefs.
     skill_manager: Arc<SkillManager>,
-    /// Computer Use availability flag (shared with server; used for GUI-channel
-    /// auto-enable with a user opt-in window).
+    /// Computer Use availability flag (kept for API compatibility, not used on Linux).
+    #[allow(dead_code)]
     computer_use_enabled: Arc<AtomicBool>,
     /// Whether to use LLM to simulate human intervention when blocked.
     human_intervention_enabled: Arc<AtomicBool>,
@@ -321,11 +321,9 @@ impl ManagedRunner {
         let max_tool_retries = self.max_tool_retries;
         let skill_manager = self.skill_manager.clone();
         let workspace_dir = self.workspace_dir.clone();
-        let computer_use_enabled = self.computer_use_enabled.clone();
         let human_intervention_enabled = self.human_intervention_enabled.clone();
         let provider = self.provider.clone();
         let manager_model = self.manager_model.clone();
-        // Direct registry access for GUI-channel auto-enable (register cu_* tools).
         let tools = self.tools.clone();
         // Move auditor + permission profile into the spawned task for post-Executor
         // verification and pre-authorization consultation (Phase 6).
@@ -631,12 +629,12 @@ impl ManagedRunner {
                 // human input instead of terminating the round.
                 let brief = match plan.channel.as_str() {
                     "gui" => {
-                        ensure_gui_channel(&tx, &contract_id, &session, &computer_use_enabled, &tools, &cancelled_flag).await;
+                        // GUI channel: guide the Executor to use browser tools
                         let mut b = brief;
                         if brief_lang_cn {
-                            b.push_str("\n\n## Execution Channel: GUI\n本轮任务必须通过 GUI 工具完成——优先使用浏览器/技能工具（用户真实浏览器）或 computer_use 工具（cu_screenshot / cu_mouse / cu_keyboard 等界面控制）。不要尝试用 shell_exec 或 curl 代替 GUI 交互。");
+                            b.push_str("\n\n## Execution Channel: GUI\n本轮任务需要浏览器交互——使用 browser_cdp / browser_skill 工具完成浏览器操作。不要尝试用 shell_exec 或 curl 代替 GUI 交互。");
                         } else {
-                            b.push_str("\n\n## Execution Channel: GUI\nThis round MUST be completed through GUI tools - prefer a browser/skill tool (real user browser) or computer_use tools (cu_screenshot / cu_mouse / cu_keyboard). Do not try shell_exec or curl to replace GUI interaction.");
+                            b.push_str("\n\n## Execution Channel: GUI\nThis round MUST be completed through browser tools - use browser_cdp / browser_skill tools. Do not try shell_exec or curl to replace GUI interaction.");
                         }
                         b
                     }
@@ -1034,64 +1032,6 @@ Be concise and specific. Focus on practical next steps."#;
 
         Ok(content)
     }
-}
-
-/// Ensure Computer Use tools are available for a GUI-channel round.
-///
-/// If the flag is already enabled, returns immediately. Otherwise announces a
-/// 30-second user opt-in window (the user can enable via Settings > Computer
-/// Use), and auto-enables on timeout — matching the shared flag used by the
-/// server's toggle endpoint so both paths stay consistent.
-///
-/// Respects the cancelled flag: if the user sends STOP during the wait, the
-/// function returns early without enabling tools.
-async fn ensure_gui_channel(
-    tx: &tokio::sync::mpsc::Sender<AgentResult<AgentEvent>>,
-    contract_id: &str,
-    session: &str,
-    enabled: &Arc<AtomicBool>,
-    tools: &Arc<tokio::sync::RwLock<ToolRegistry>>,
-    cancelled: &Arc<AtomicBool>,
-) {
-    if enabled.load(Ordering::SeqCst) {
-        return;
-    }
-    let _ = tx.send(Ok(AgentEvent::text(
-        "\n\n*[GUI 通道] 本轮任务需要 GUI 交互，但 computer_use 工具未启用。\n\
-         请在 30 秒内前往 **设置 > Computer Use** 手动开启；\n\
-         或等待 30 秒后自动开启。*\n\n",
-        contract_id, "manager"
-    ))).await;
-    // 30-second window: poll every 1s so a manual enable or STOP interrupts the wait.
-    for _ in 0..30 {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        // Check if user sent STOP — if so, abort the wait immediately.
-        if cancelled.load(Ordering::SeqCst) {
-            let _ = tx.send(Ok(AgentEvent::text(
-                "*[GUI 通道] 用户已停止任务，取消等待。*\n\n",
-                contract_id, "manager"
-            ))).await;
-            return;
-        }
-        if enabled.load(Ordering::SeqCst) {
-            let _ = tx.send(Ok(AgentEvent::text(
-                "*[GUI 通道] computer_use 已手动开启。*\n\n",
-                contract_id, "manager"
-            ))).await;
-            return;
-        }
-    }
-    // Auto-enable on timeout: flip the shared flag + register the tools.
-    enabled.store(true, Ordering::SeqCst);
-    {
-        let mut registry = tools.write().await;
-        crate::tool::computer_use::register_computer_use_tools(&mut registry);
-    }
-    info!("[managed:{}] computer_use auto-enabled after GUI-channel timeout", session);
-    let _ = tx.send(Ok(AgentEvent::text(
-        "*[GUI 通道] 30 秒内未手动开启，已自动启用 computer_use 工具。*\n\n",
-        contract_id, "manager"
-    ))).await;
 }
 
 /// Persist the TaskContract to SQLite (best-effort crash recovery).

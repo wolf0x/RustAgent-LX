@@ -72,8 +72,9 @@ fn main() {
     embed_rules(&out_dir);
     embed_workspace_files(&out_dir);
 
-    // Embed Windows application icon
-    if cfg!(target_os = "windows") {
+    // Embed Windows application icon (only on Windows target)
+    #[cfg(target_os = "windows")]
+    {
         let icon_path = "RustAgent.ico";
         if Path::new(icon_path).exists() {
             let mut res = winresource::WindowsResource::new();

@@ -20,15 +20,19 @@ use crate::tool::{ToolExecutionStrategy, ToolRegistry};
 /// When multiple of these are called together, they can run concurrently
 /// to speed up incident triage (3-4x faster for full collection).
 pub const IR_COLLECTION_TOOLS: &[&str] = &[
-    "ir_scan",
-    "ir_process",
-    "ir_account",
-    "ir_persistence",
-    "ir_network",
-    "ir_eventlog",
-    "ir_file",
-    "ir_driver",
-    "ir_timeline",
+    "linux_ir_process",
+    "linux_ir_network",
+    "linux_ir_persistence",
+    "linux_ir_rootkit",
+    "linux_ir_file",
+    "linux_ir_web",
+    "linux_ir_mining",
+    "linux_ir_lateral",
+    "linux_ir_auth",
+    "linux_ir_backdoor",
+    "linux_ir_bruteforce",
+    "linux_ir_integrity",
+    "linux_ir_config",
 ];
 
 /// Check if a tool name is part of the IR collection set (safe for parallel execution).
@@ -386,13 +390,8 @@ when speaking to them directly. Never use generic terms like \"user\", \"hey\", 
 - When the user asks about their system (IP address, processes, services, files, disk space, etc.), \
   you **MUST** use the appropriate tool to get REAL data. Do NOT guess or provide hypothetical answers.\n\
 - Available tools include:\n\
-  - `shell_exec` — Run any PowerShell/CMD command (e.g., `ipconfig`, `Get-Process`, `systeminfo`)\n\
-  - `sys_info` — Get system hardware/OS information\n\
-  - `sys_process` — List and manage processes\n\
-  - `sys_service` — List and manage Windows services\n\
-  - `sys_eventlog` — Query Windows event logs\n\
+  - `shell_exec` — Run any bash/sh command (e.g., `ip addr`, `ps aux`, `df -h`, `uname -a`)\n\
   - `file_read` / `file_write` / `file_list` / `file_delete` / `file_modify` — File operations\n\
-  - `app_launch` — Launch applications\n\
   - `browser_open` — Open URLs in the browser\n\
   - `cron_manage` — Create, list, delete, or toggle scheduled CRON tasks\n\
   - `list_skills` — List all available skills\n\
@@ -406,32 +405,35 @@ when speaking to them directly. Never use generic terms like \"user\", \"hey\", 
   - `browser_skill` — Interactive browser automation via BrowserSkill (bsk CLI). Uses the user's existing browser with login state. \
     Actions: navigate, snapshot (accessibility tree), screenshot, click, fill, press, select, evaluate JS, tab management. \
     Use this when you need the user's authenticated sessions (dashboards, portals, SSO-protected pages).\n\
-- If the user asks 'what is my IP' or similar, call `shell_exec` with `ipconfig` or `Get-NetIPAddress`.\n\
+  - `linux_ssh` — Execute commands on remote Linux hosts via SSH\n\
+  - `ir_linux` — Comprehensive Linux incident response via SSH\n\
+  - `linux_ir_*` — Individual Linux IR category tools (process, network, persistence, etc.)\n\
+- If the user asks 'what is my IP' or similar, call `shell_exec` with `ip addr` or `hostname -I`.\n\
 - Always call tools FIRST, then explain the results to the user.\n\
 - Never say 'I can't check' or 'I don't have access' — you DO have access via tools!\n\n\
 ## How to Call Tools (IMPORTANT)\n\
 When you need to use a tool, you **MUST actually emit the tool call** — do NOT just say \"let me check\" \
 or \"I'll use a tool\" without actually calling it. If your API supports native function calling, use that. \
 If it does NOT, output a JSON code block in this exact format:\n\
-```json\n{{\"name\": \"shell_exec\", \"arguments\": {{\"command\": \"ipconfig\"}}}}\n```\n\
+```json\n{{\"name\": \"shell_exec\", \"arguments\": {{\"command\": \"ip addr\"}}}}\n```\n\
 The system will detect this block, execute the tool, and return the result. You MUST output the JSON block — \
 saying \"let me check\" without the actual JSON block does nothing.\n\n\
 **CRITICAL: When emitting a tool call, output ONLY the JSON code block — nothing else.** \
-Do NOT write narrative text like \"let me open the calculator\" before or alongside the tool call. \
+Do NOT write narrative text like \"let me open the browser\" before or alongside the tool call. \
 Do NOT repeat yourself. The tool call IS your action — explain the result AFTER you receive it, not before.\n\
-Wrong: \"Let me open the calculator for you! ```json ... ```\"\n\
-Right: ```json\n{{\"name\": \"app_launch\", ...}}\n```\n\
-(Then after the tool result comes back, say \"Calculator has been opened.\")\n\n\
+Wrong: \"Let me check the IP for you! ```json ... ```\"\n\
+Right: ```json\n{{\"name\": \"shell_exec\", ...}}\n```\n\
+(Then after the tool result comes back, say \"Your IP address is...\")\n\n\
 ## Web/HTTP Fetching\n\
 - Use `web_fetch` for most HTTP requests: it returns structured JSON (status, content_type, body), \
   handles encoding, and has SSRF protection (set `allow_private=true` for internal targets).\n\
 - If `web_fetch` returns a `saved_path` field (large response auto-saved to disk), use `file_read` \
   to read the full content — do NOT rely on the preview alone.\n\
-- For ADVANCED HTTP scenarios use `shell_exec` with `curl.exe` (NOT web_fetch):\n\
+- For ADVANCED HTTP scenarios use `shell_exec` with `curl` (NOT web_fetch):\n\
   - Non-GET/POST methods: PUT, PATCH, DELETE, HEAD, OPTIONS\n\
-  - Multipart/form-data file uploads: `curl.exe -F \"file=@C:\\path\\file\" URL`\n\
+  - Multipart/form-data file uploads: `curl -F \"file=@/path/to/file\" URL`\n\
   - Custom TLS options, cookies, redirects, specific protocol quirks, proxies (`--proxy`)\n\
-  - Downloading binary files: `curl.exe -o file.ext URL`\n\
+  - Downloading binary files: `curl -o file.ext URL`\n\
   - Always add `-s` (silent) and `--max-time 30`; for large outputs use `-o file` and read the file \
     with `file_read` (in chunks if needed) instead of printing to stdout (stdout results are capped).\n\
 - General rule: when a response is large, prefer saving to a file and reading it with `file_read` \
@@ -485,14 +487,14 @@ injected into your context as SYSTEM messages labeled **[Memory Context]** or **
 When the user DENIES a tool permission (you receive 'PERMISSION DENIED'):\n\
 - The denial is FINAL. Do NOT retry the same tool.\n\
 - Do NOT attempt to achieve the same result through alternative tools. For example:\n\
-  - If `file_delete` is denied, do NOT use `shell_exec` with `Remove-Item`, `del`, `rm`, or any other command to delete the file.\n\
-  - If `file_write` is denied, do NOT use `shell_exec` with `echo`, `Set-Content`, or `Out-File` to write the file.\n\
-  - If any tool is denied, do NOT circumvent it via PowerShell, CMD, or any other indirect method.\n\
+  - If `file_delete` is denied, do NOT use `shell_exec` with `rm`, `unlink`, or any other command to delete the file.\n\
+  - If `file_write` is denied, do NOT use `shell_exec` with `echo`, `tee`, or `>` redirection to write the file.\n\
+  - If any tool is denied, do NOT circumvent it via shell commands or any other indirect method.\n\
 - Simply inform the user that the action was denied and ask if they want to do something else.\n\
 - A permission denial means the user does NOT want this action to happen — regardless of which tool performs it.\n",
         );
 
-        // ── Scheduled Tasks: RustAgent CRON vs Windows Schtasks ──
+        // ── Scheduled Tasks: RustAgent CRON vs System Cron ──
         prompt.push_str(
             "\n## Scheduled Tasks: CRON vs System Tasks\n\
 You have TWO ways to create scheduled tasks. You MUST distinguish between them:\n\n\
@@ -504,26 +506,26 @@ You have TWO ways to create scheduled tasks. You MUST distinguish between them:\
 - Schedule format: 'every Ns' (seconds), 'every Nm' (minutes), 'every Nh' (hours), 'every Nd' (days)\n\
 - Examples:\n\
   - User: '每小时检查一次磁盘空间' → cron_manage create, schedule='every 1h', message='Check disk space and report if usage is above 80%'\n\
-  - User: '每天早上9点汇报系统状态' → cron_manage create, schedule='every 1d', message='Run systeminfo and summarize system health'\n\
+  - User: '每天早上9点汇报系统状态' → cron_manage create, schedule='every 1d', message='Run system info commands and summarize system health'\n\
   - User: '每30秒ping一下google.com' → cron_manage create, schedule='every 30s', message='Ping google.com and report latency'\n\
   - User: '列出所有定时任务' → cron_manage list\n\
   - User: '删除那个磁盘检查任务' → cron_manage delete, task_id=<id from list>\n\
   - User: '暂停那个任务' → cron_manage toggle, task_id=<id>\n\n\
-### Windows Task Scheduler (System-Level)\n\
-- Managed via `schtasks.exe` command-line tool\n\
+### System Cron (OS-Level)\n\
+- Managed via `crontab` command-line tool\n\
 - Run independently of RustAgent (even when RustAgent is closed)\n\
 - Results are NOT automatically fed back to chat\n\
 - Use for: system maintenance, cleanup, backups, scripts that should run regardless of RustAgent\n\
-- Example: 'Create a scheduled task to clean temp files every Sunday at 2 AM'\n\
-- To create: use `shell_exec` with schtasks commands:\n\
-  - Create: `schtasks /Create /TN \"TaskName\" /TR \"command\" /SC DAILY /ST 02:00 /F`\n\
-  - List:   `schtasks /Query /FO LIST`\n\
-  - Delete: `schtasks /Delete /TN \"TaskName\" /F`\n\n\
+- Example: 'Create a cron job to clean temp files every Sunday at 2 AM'\n\
+- To manage: use `shell_exec` with crontab commands:\n\
+  - List:   `crontab -l`\n\
+  - Add:    `(crontab -l; echo \"0 2 * * 0 /path/to/script\") | crontab -`\n\
+  - Remove: `crontab -l | grep -v \"pattern\" | crontab -`\n\n\
 **Decision guide:**\n\
 - User wants to **see results in chat** → RustAgent CRON (use `cron_manage` tool)\n\
-- Task should **run independently** or **survive RustAgent restarts** → Windows Schtasks\n\
+- Task should **run independently** or **survive RustAgent restarts** → System Cron\n\
 - Task requires **AI capabilities** → RustAgent CRON\n\
-- Simple **system command** → Windows Schtasks\n",
+- Simple **system command** → System Cron\n",
         );
 
         // ── TODO Task Planning ──
@@ -599,25 +601,13 @@ You have two layers of memory:\n\n\
 - The automatic SQLite memory handles day-to-day recall; MEMORY.md is for lasting insights\n",
             );
 
-            // ── Computer Use (GUI Control) Routing ──
+            // ── Tool Priority Guidance ──
             prompt.push_str(
-                "\n## Computer Use (GUI Control) Tools\n\
-You may have desktop control capabilities (cu_* tools). Use them ONLY when CLI tools cannot accomplish the task.\n\n\
+                "\n## Tool Priority\n\
 **Priority order (always prefer the earlier option):**\n\
-1. CLI tools (shell_exec, sys_info, ir_*, file_*) — for system queries, file ops, process management\n\
+1. CLI tools (shell_exec, file_*, linux_ir_*) — for system queries, file ops, process management\n\
 2. Browser tools or the active browser skill — for web pages and web apps\n\
-3. Computer Use tools (cu_*) — ONLY for native desktop GUI apps that have no CLI/API equivalent\n\n\
-**When to use Computer Use:**\n\
-- Interacting with native GUI applications (installers, legacy software, modal dialogs)\n\
-- Taking screenshots of the desktop or specific windows as evidence\n\
-- Reading/manipulating UI elements that have no programmatic API\n\
-- Automating workflows in applications that only expose a GUI\n\n\
-**When NOT to use Computer Use:**\n\
-- Anything achievable via shell_exec (ipconfig, Get-Process, taskkill, etc.)\n\
-- File operations (use file_read/file_write/file_list)\n\
-- Browser automation (use a browser tool or the active browser skill)\n\
-- Process/service management (use sys_process, sys_service)\n\n\
-**Screenshot workflow:** cu_screenshot returns a URL. Use markdown `![desc](url)` to display it.\n",
+3. SSH tools (linux_ssh, ir_linux) — for remote Linux host operations\n",
             );
         }
 
@@ -1002,7 +992,7 @@ impl Agent for LlmAgent {
                                     Available tools:\n{}\n\n\
                                     Output ONLY the tool call JSON code block — NO narrative text, NO explanation, NO preamble.\n\
                                     Format:\n\
-                                    ```json\n{{\"name\": \"shell_exec\", \"arguments\": {{\"command\": \"ipconfig\"}}}}\n```\n\
+                                    ```json\n{{\"name\": \"shell_exec\", \"arguments\": {{\"command\": \"ip addr\"}}}}\n```\n\
                                     Replace the tool name and arguments with what you actually need.\n\n\
                                     CRITICAL: Your entire response must be ONLY the ```json ... ``` block. Nothing before it, nothing after it.",
                                     tool_list_hint
@@ -1594,7 +1584,7 @@ async fn execute_tool_call(
             "error": format!(
                 "PERMISSION DENIED: The user has denied the tool '{}' for this action. \
                  This decision is FINAL. You MUST NOT attempt to achieve the same result \
-                 through alternative tools (e.g., shell_exec, PowerShell, CMD, or any other method). \
+                 through alternative tools (e.g., shell_exec or any other method). \
                  Respect the user's decision and inform them that the action was denied.",
                 tool_name
             )

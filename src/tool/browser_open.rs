@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::os::windows::process::CommandExt;
 use std::process::Command;
 
 use super::Tool;
@@ -8,8 +7,8 @@ use crate::context::ToolContext;
 use crate::error::AgentResult;
 
 /// If `path` is an absolute path located under `workspace_dir`, returns its
-/// workspace-relative forward-slash path (e.g. E:/ws/output/a.html -> "output/a.html").
-/// Returns None otherwise (not absolute, outside workspace, or empty workspace_dir).
+/// workspace-relative forward-slash path (e.g. /home/user/output/a.html -> "output/a.html").
+/// Returns None otherwise.
 fn absolute_path_under_workspace(path: &str, workspace_dir: &str) -> Option<String> {
     if workspace_dir.is_empty() {
         return None;
@@ -23,7 +22,7 @@ fn absolute_path_under_workspace(path: &str, workspace_dir: &str) -> Option<Stri
     if rel.as_os_str().is_empty() {
         return None;
     }
-    Some(rel.to_string_lossy().replace("\\", "/"))
+    Some(rel.to_string_lossy().to_string())
 }
 
 pub struct BrowserOpenTool;
@@ -48,7 +47,7 @@ impl Tool for BrowserOpenTool {
     async fn execute(&self, args: Value, ctx: &ToolContext) -> AgentResult<Value> {
         let mut url = args["url"].as_str().ok_or_else(|| "Missing 'url'".to_string())?.to_string();
 
-        // Reject URLs containing cmd.exe metacharacters to prevent command injection
+        // Reject URLs containing shell metacharacters to prevent command injection
         let dangerous_chars = ['&', '|', '>', '<', '^', '`', ';'];
         if url.chars().any(|c| dangerous_chars.contains(&c)) {
             return Err(format!("URL contains dangerous characters: {:?}. Only http/https URLs with standard characters are allowed.", dangerous_chars).into());
@@ -58,23 +57,14 @@ impl Tool for BrowserOpenTool {
             return Err("'url' is empty".to_string().into());
         }
 
-        // Windows paths are case-insensitive, so detect scheme prefixes against a
-        // lowercased copy while preserving the original content.
         let lower = url.to_ascii_lowercase();
 
         // Smart URL detection and conversion
         if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("file://") {
             // Already a proper URL, use as-is
         } else if let Some(rel) = absolute_path_under_workspace(&url, &ctx.workspace_dir) {
-            // Absolute path inside workspace_dir -> served URL so relative assets
-            // (CSS, other files) resolve the same way as file_write's output path.
             url = format!("http://localhost:7788/workspace/{}", rel);
-        } else if url.chars().nth(1) == Some(':') && url.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) {
-            // Windows absolute path outside the workspace (e.g., C:\path\to\file)
-            let path_normalized = url.replace("\\", "/");
-            url = format!("file:///{}", path_normalized);
         } else if lower.starts_with("output/") || lower.starts_with("workspace/") {
-            // Workspace-relative path, convert to workspace URL
             let workspace_path = if lower.starts_with("output/") {
                 format!("workspace/{}", url)
             } else {
@@ -86,11 +76,12 @@ impl Tool for BrowserOpenTool {
             url = format!("https://{}", url);
         }
 
-        let mut cmd = Command::new("cmd");
-        cmd.arg("/C").arg("start").arg("").arg(&url);
-        cmd.creation_flags(0x08000000);
+        // Use xdg-open on Linux
+        let result = Command::new("xdg-open")
+            .arg(&url)
+            .spawn();
 
-        match cmd.spawn() {
+        match result {
             Ok(_) => Ok(json!({ "status": "opened", "url": url })),
             Err(e) => Err(format!("Failed to open browser: {}", e).into()),
         }

@@ -1999,20 +1999,9 @@ async fn computer_use_toggle_handler(
     Json(body): Json<Value>,
 ) -> Json<Value> {
     let enabled = body.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-    let prev = state.computer_use_enabled.swap(enabled, Ordering::SeqCst);
-
-    if prev != enabled {
-        let mut registry = state.tools.write().await;
-        if enabled {
-            crate::tool::computer_use::register_computer_use_tools(&mut registry);
-            info!("Computer Use tools ENABLED ({} tools registered)", crate::tool::computer_use::CU_TOOL_NAMES.len());
-        } else {
-            crate::tool::computer_use::unregister_computer_use_tools(&mut registry);
-            info!("Computer Use tools DISABLED");
-        }
-    }
-
-    Json(json!({ "success": true, "enabled": enabled }))
+    // Computer Use tools are not available on Linux — just update the flag
+    state.computer_use_enabled.store(enabled, Ordering::SeqCst);
+    Json(json!({ "success": true, "enabled": enabled, "note": "Computer Use tools are not available on this platform" }))
 }
 
 // ============================================================

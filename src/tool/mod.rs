@@ -1,11 +1,6 @@
 pub mod file_ops;
 pub mod shell_exec;
-pub mod sys_info;
-pub mod sys_eventlog;
-pub mod sys_process;
-pub mod sys_service;
 pub mod sys_remind;
-pub mod app_launch;
 pub mod browser_open;
 pub mod mcp_client;
 pub mod web_fetch;
@@ -14,27 +9,13 @@ pub mod memory_md;
 pub mod todo_update;
 pub mod browser_cdp;
 pub mod browser_skill;
-pub mod ir_scan;
-pub mod ir_process;
-pub mod ir_account;
-pub mod ir_persistence;
-pub mod ir_network;
-pub mod ir_eventlog;
-pub mod ir_file;
-pub mod ir_artifacts;
-pub mod ir_driver;
-pub mod ir_analyzer;
-pub mod ir_report;
 pub mod malware_analysis;
 pub mod malware_scan;
 pub mod malware_deep;
 pub mod ir_weblog_scan;
-pub mod ir_evtx_parse;
 pub mod ir_log_parse;
 pub mod ir_pcap_analyze;
-pub mod ir_timeline;
 pub mod external_exec;
-pub mod computer_use;
 pub mod linux_ssh;
 pub mod linux_ir_common;
 pub mod linux_ir_process;
@@ -51,13 +32,31 @@ pub mod linux_ir_bruteforce;
 pub mod linux_ir_integrity;
 pub mod linux_ir_config;
 pub mod ir_linux;
-pub mod ir_vss;
-pub mod ir_usn;
-pub mod ir_memdump;
 pub mod ir_case;
-pub mod ir_attackpath;
 pub mod ir_eml;
 pub mod partial_result;
+
+/// Apply CREATE_NO_WINDOW flag on Windows to suppress console popups.
+/// No-op on non-Windows platforms.
+#[allow(unused_variables)]
+pub fn apply_no_window_flags(cmd: &mut std::process::Command) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+}
+
+/// Apply CREATE_NO_WINDOW flag on Windows for tokio::process::Command.
+/// No-op on non-Windows platforms.
+#[allow(unused_variables)]
+pub fn apply_no_window_flags_tokio(cmd: &mut tokio::process::Command) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+}
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -74,18 +73,14 @@ use crate::model::ToolDefinition;
 
 /// Timeout stage for tools, controlling how long the executor waits
 /// before aborting. Modeled after LongHorizon-Harness graded timeout policy.
-///
-/// Tools that perform disk scans, remote SSH operations, or large data
-/// processing should override [`Tool::timeout_secs`] to return [`TimeoutStage::Long`]
-/// or [`TimeoutStage::Watchdog`] instead of the default [`TimeoutStage::Normal`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeoutStage {
     /// Fast operations: file reads, simple shell commands, sys_info (~30s).
     Fast,
     /// Normal operations: most tools, IR collection, web fetches (~300s).
     Normal,
-    /// Long operations: full YARA scans, remote SSH scans, large eventlog
-    /// exports, PCAP analysis (~30min).
+    /// Long operations: full YARA scans, remote SSH scans, large data
+    /// processing (~30min).
     Long,
     /// Watchdog operations: memory dumps, deep disassembly — no hard wall-clock
     /// limit, only a liveness watchdog (abort if silent for 10min).
@@ -105,7 +100,6 @@ impl TimeoutStage {
     }
 
     /// Liveness watchdog threshold for this stage (seconds of silence before abort).
-    /// Used when the hard wall-clock is `None` (Watchdog) or as a secondary check.
     pub fn watchdog_silence_secs(self) -> u64 {
         match self {
             TimeoutStage::Fast => 15,
@@ -123,14 +117,10 @@ impl Default for TimeoutStage {
 }
 
 // ============================================================
-// Tool trait — enriched interface modeled after ADK-RUST
+// Tool trait
 // ============================================================
 
 /// The Tool trait — core abstraction for all callable tools.
-/// Modeled after ADK-RUST's Tool trait with rich metadata methods.
-///
-/// Default implementations return sensible values so most tools
-/// only need to implement name(), description(), parameters_schema(), execute().
 #[async_trait]
 pub trait Tool: Send + Sync {
     /// Tool name (unique identifier, used by the LLM).
@@ -145,13 +135,12 @@ pub trait Tool: Send + Sync {
     /// Execute the tool with given arguments and context.
     async fn execute(&self, args: Value, ctx: &ToolContext) -> AgentResult<Value>;
 
-    // --- ADK-RUST inspired metadata methods (defaults provided) ---
+    // --- Metadata methods (defaults provided) ---
 
     /// Whether this tool is a built-in tool (vs user-provided or MCP).
     fn is_builtin(&self) -> bool { false }
 
     /// Whether this tool only reads data without modifying anything.
-    /// Read-only tools can be executed concurrently in Parallel strategy.
     fn is_read_only(&self) -> bool { false }
 
     /// Permission category for this tool: read, write, delete, modify, or execute.
@@ -165,20 +154,12 @@ pub trait Tool: Send + Sync {
     /// Whether this tool is long-running (e.g., file downloads, installs).
     fn is_long_running(&self) -> bool { false }
 
-    /// Timeout stage for this tool. Determines the wall-clock limit and
-    /// liveness watchdog threshold used by the executor.
-    ///
-    /// Override this for tools that perform disk scans, remote operations,
-    /// or large data processing to return [`TimeoutStage::Long`] or
-    /// [`TimeoutStage::Watchdog`].
-    ///
-    /// Default: [`TimeoutStage::Normal`] (300s).
+    /// Timeout stage for this tool.
     fn timeout_stage(&self) -> TimeoutStage {
         TimeoutStage::Normal
     }
 
     /// Effective timeout in seconds for this tool, or `None` for watchdog-only.
-    /// Convenience wrapper around [`Tool::timeout_stage`].
     fn timeout_secs(&self) -> Option<u64> {
         self.timeout_stage().as_secs()
     }
@@ -206,11 +187,10 @@ pub trait Tool: Send + Sync {
 }
 
 // ============================================================
-// Tool execution strategy — modeled after ADK-RUST
+// Tool execution strategy
 // ============================================================
 
 /// How tools should be executed within a single agent iteration.
-/// Modeled after ADK-RUST's ToolExecutionStrategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolExecutionStrategy {
     /// Execute tools one at a time, in order.
@@ -228,11 +208,10 @@ impl Default for ToolExecutionStrategy {
 }
 
 // ============================================================
-// Toolset abstraction — modeled after ADK-RUST
+// Toolset abstraction
 // ============================================================
 
 /// A collection of tools that can be resolved dynamically.
-/// Modeled after ADK-RUST's Toolset trait.
 pub trait Toolset: Send + Sync {
     /// Get all tools in this toolset.
     fn tools(&self) -> Vec<Arc<dyn Tool>>;
@@ -273,11 +252,10 @@ impl Toolset for MergedToolset {
 }
 
 // ============================================================
-// Tool registry — name-to-instance lookup
+// Tool registry
 // ============================================================
 
 /// Registry of tools — provides name-based lookup and definition generation.
-/// Modeled after ADK-RUST's ToolRegistry.
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
 }
@@ -331,7 +309,6 @@ impl ToolRegistry {
     }
 
     /// Register external tools from workspace/tools/ directory.
-    /// Removes existing ext_* tools first, then registers current enabled tools.
     pub fn sync_external_tools(&mut self, handles: &[(String, std::path::PathBuf, String, String)]) {
         self.unregister_external();
         for (name, path, description, extension) in handles {
@@ -345,65 +322,44 @@ impl ToolRegistry {
         }
     }
 
-    /// Build the default registry with all built-in Windows tools.
+    /// Build the default registry with all built-in tools.
     /// `notify_tx` is the broadcast channel used by `sys_remind` to push
     /// reminders to WebSocket clients (pass `None` when unavailable).
     pub fn build_default(working_dir: &str, notify_tx: Option<crate::tool::sys_remind::NotifyTx>) -> Self {
         let mut registry = Self::new();
+        // File operations
         registry.register(Arc::new(file_ops::FileReadTool));
         registry.register(Arc::new(file_ops::FileWriteTool));
         registry.register(Arc::new(file_ops::FileDeleteTool));
         registry.register(Arc::new(file_ops::FileModifyTool));
         registry.register(Arc::new(file_ops::FileListTool));
+        // Shell execution
         registry.register(Arc::new(shell_exec::ShellExecTool));
-        registry.register(Arc::new(sys_info::SysInfoTool));
-        registry.register(Arc::new(sys_eventlog::SysEventLogTool));
-        registry.register(Arc::new(sys_process::SysProcessTool));
-        registry.register(Arc::new(sys_service::SysServiceTool));
+        // System utilities
         registry.register(Arc::new(sys_remind::SysRemindTool::with_notify_tx_optional(notify_tx)));
-        registry.register(Arc::new(app_launch::AppLaunchTool));
+        // Browser tools
         registry.register(Arc::new(browser_open::BrowserOpenTool));
         registry.register(Arc::new(web_fetch::WebFetchTool));
-        // IR (Incident Response) tools — ported from yinghuo
-        registry.register(Arc::new(ir_scan::IrScanTool));
-        registry.register(Arc::new(ir_process::IrProcessTool));
-        registry.register(Arc::new(ir_account::IrAccountTool));
-        registry.register(Arc::new(ir_persistence::IrPersistenceTool));
-        registry.register(Arc::new(ir_network::IrNetworkTool));
-        registry.register(Arc::new(ir_eventlog::IrEventLogTool));
-        registry.register(Arc::new(ir_file::IrFileTool));
-        registry.register(Arc::new(ir_artifacts::IrArtifactsTool));
-        registry.register(Arc::new(ir_driver::IrDriverTool));
-        registry.register(Arc::new(ir_analyzer::IrAnalyzerTool));
-        registry.register(Arc::new(ir_report::IrReportTool));
-        // Investigation case tracker and attack path modeling
-        registry.register(Arc::new(ir_case::IrCaseTool));
-        registry.register(Arc::new(ir_attackpath::IrAttackPathTool));
-        // EML email parser for phishing analysis
-        registry.register(Arc::new(ir_eml::IrEmlTool));
-        // Malware analysis tools — ported from hacksguard
+        // Malware analysis tools
         registry.register(Arc::new(malware_scan::MalwareScanTool));
         registry.register(Arc::new(malware_deep::MalwareDeepTool));
-        // Log analysis tools — ported from RavenEye
+        // Log analysis tools (cross-platform)
         registry.register(Arc::new(ir_weblog_scan::IrWeblogScanTool));
-        registry.register(Arc::new(ir_evtx_parse::IrEvtxParseTool));
         registry.register(Arc::new(ir_log_parse::IrLogParseTool));
         // PCAP analysis
         registry.register(Arc::new(ir_pcap_analyze::IrPcapAnalyzeTool));
-        // Timeline reconstruction
-        registry.register(Arc::new(ir_timeline::IrTimelineTool));
+        // EML email parser for phishing analysis
+        registry.register(Arc::new(ir_eml::IrEmlTool));
+        // Investigation case tracker
+        registry.register(Arc::new(ir_case::IrCaseTool));
         // Linux IR — remote SSH-based incident response
         registry.register(Arc::new(ir_linux::IrLinuxTool));
-        // Linux IR — individual category tools (like Windows IR tools)
+        // Linux IR — individual category tools
         for tool in ir_linux::linux_ir_category_tools() {
             registry.register(tool);
         }
-        // General-purpose SSH command execution (like shell_exec for remote Linux)
+        // General-purpose SSH command execution
         registry.register(Arc::new(linux_ssh::SshExecTool));
-        // Forensic disk/memory tools
-        registry.register(Arc::new(ir_vss::IrVssTool));
-        registry.register(Arc::new(ir_usn::IrUsnTool));
-        registry.register(Arc::new(ir_memdump::IrMemdumpTool));
         let _ = working_dir;
         registry
     }
@@ -417,21 +373,18 @@ impl ToolRegistry {
 }
 
 // ============================================================
-// Binary resolution — Windows-style search path
+// Binary resolution
 // ============================================================
 
 /// Resolve an external binary path using a 3-tier search order:
 ///
-/// 1. Application directory (where RustAgent.exe lives) — for bundled tools
+/// 1. Application directory (where RustAgent lives) — for bundled tools
 /// 2. `{workspace}/tools/` — for user-installed tools
 /// 3. System PATH — fallback to OS resolution
 ///
-/// This follows the Windows convention where application-local binaries
-/// take priority over user tools, which take priority over system-wide tools.
-///
 /// Returns the full path if found in tiers 1-2, or the bare name for PATH fallback.
 pub fn resolve_binary(name: &str, workspace_dir: &str) -> String {
-    // Tier 1: Application directory (where the RustAgent executable lives)
+    // Tier 1: Application directory
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             let candidate = exe_dir.join(name);
@@ -451,7 +404,7 @@ pub fn resolve_binary(name: &str, workspace_dir: &str) -> String {
         return tools_candidate.to_string_lossy().to_string();
     }
 
-    // Tier 3: System PATH — return bare name, let OS resolve it
+    // Tier 3: System PATH
     tracing::debug!("Binary '{}' not found locally, falling back to system PATH", name);
     name.to_string()
 }

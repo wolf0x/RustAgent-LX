@@ -1,14 +1,12 @@
 #[allow(dead_code)]
 mod agent;
 #[allow(dead_code)]
-#[allow(dead_code)]
 mod callbacks;
 mod checkpoint;
+mod cli;
 mod config;
 mod crypto;
 mod distill;
-#[allow(dead_code)]
-mod forensics;
 #[allow(dead_code)]
 mod context;
 #[allow(dead_code)]
@@ -143,22 +141,27 @@ impl DailyLogShared {
     }
 }
 
-/// A tracing writer that mirrors every formatted line to stdout, a fresh per-run
-/// file (`rustagent-YYYY-MM-DD.N.log`), and a stable dated alias. Keeps live
-/// console output while persisting a copy under workspace/logs/, with one log
-/// file per program launch.
+/// A tracing writer that mirrors every formatted line to a log file.
+/// Whether it also writes to stdout depends on the `show_on_console` flag:
+/// - CLI mode: false (only agent TextDelta events are printed to stdout)
+/// - Web mode: true (all system logs are echoed to console for debugging)
 struct TeeLogWriter {
     shared: std::sync::Arc<DailyLogShared>,
+    show_on_console: bool,
 }
 impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for TeeLogWriter {
     type Writer = TeeLogSink;
     fn make_writer(&'a self) -> Self::Writer {
-        TeeLogSink { shared: self.shared.clone() }
+        TeeLogSink { 
+            shared: self.shared.clone(), 
+            show_on_console: self.show_on_console, 
+        }
     }
 }
 
 struct TeeLogSink {
     shared: std::sync::Arc<DailyLogShared>,
+    show_on_console: bool,
 }
 impl std::io::Write for TeeLogSink {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -167,7 +170,12 @@ impl std::io::Write for TeeLogSink {
             Ok(g) => g,
             Err(e) => e.into_inner(),
         };
-        let _ = std::io::Write::write_all(&mut std::io::stdout(), buf);
+        // Only echo to stdout if show_on_console is enabled (web mode).
+        // In CLI mode, agent text output comes from AgentEvent::TextDelta events,
+        // not from tracing logs.
+        if self.show_on_console {
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), buf);
+        }
         let today = DailyLogShared::today();
         self.shared.rotate(&mut st, &today);
         if let Some(f) = st.file.as_mut() {
@@ -179,11 +187,13 @@ impl std::io::Write for TeeLogSink {
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
-        let _ = std::io::Write::flush(&mut std::io::stdout());
         let mut st = match self.shared.state.lock() {
             Ok(g) => g,
             Err(e) => e.into_inner(),
         };
+        if self.show_on_console {
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+        }
         if let Some(f) = st.file.as_mut() {
             let _ = std::io::Write::flush(f);
         }
@@ -195,41 +205,90 @@ impl std::io::Write for TeeLogSink {
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ---- Resolve exe + workspace dir first so logging can target workspace/logs/ ----
+    // ---- Parse CLI arguments ----
+    use clap::Parser;
+    let cli_args = cli::Cli::parse();
+    let resolved = match cli_args.resolve() {
+        Some(r) => r,
+        None => {
+            // No valid mode specified — print help
+            use clap::CommandFactory;
+            cli::Cli::command().print_help().ok();
+            println!();
+            return Ok(());
+        }
+    };
+
+    // ---- Resolve exe + workspace dir ----
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    let workspace_dir = if let Ok(userprofile) = std::env::var("USERPROFILE") {
+
+    // Base workspace directory (cross-platform)
+    let base_workspace = if let Ok(home) = std::env::var("HOME") {
+        format!("{}/.RustAgent/workspace", home)
+    } else if let Ok(userprofile) = std::env::var("USERPROFILE") {
         format!("{}\\.RustAgent\\workspace", userprofile)
     } else {
         exe_dir.join(".workspace").to_string_lossy().to_string()
     };
+
+    // Resolve workspace:
+    // --workspace override > --isolated profile > shared base workspace
+    // By default, all profiles share the same base workspace.
+    // Only with --isolated flag does a profile get its own directory.
+    let workspace_dir = if let Some(ref ws) = resolved.workspace_override {
+        ws.clone()
+    } else if resolved.isolated {
+        // Isolated mode: profile gets its own workspace
+        if let Some(ref profile) = resolved.profile {
+            format!("{}/profiles/{}", base_workspace, profile)
+        } else {
+            base_workspace
+        }
+    } else {
+        // Shared mode: all profiles use the base workspace
+        base_workspace
+    };
+
     if let Err(e) = std::fs::create_dir_all(&workspace_dir) {
         tracing::warn!("Failed to create workspace directory {}: {}", workspace_dir, e);
     }
 
-    // Initialize logging: mirror to console AND a per-day file under workspace/logs/.
-    // A fresh rustagent-YYYY-MM-DD.log is created per day and rotated at midnight.
+    // Initialize logging: mirror to log file AND optionally to console.
+    // CLI mode: system logs (info/error/debug) only written to file, agent output
+    // comes from AgentEvent::TextDelta events printed directly to stdout.
+    // Web mode: all logs echoed to console for interactive debugging.
     let logs_dir = std::path::Path::new(&workspace_dir).join("logs");
     let _ = std::fs::create_dir_all(&logs_dir);
     let log_shared = std::sync::Arc::new(DailyLogShared::new(logs_dir.clone(), "rustagent".to_string()));
+    let default_filter = resolved.log_level.clone().unwrap_or_else(|| "info".to_string());
+    let show_on_console = matches!(resolved.mode, cli::RunMode::Web);
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,chromiumoxide::handler=error")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(&format!("{},chromiumoxide::handler=error", default_filter))),
         )
-        .with_writer(TeeLogWriter { shared: log_shared.clone() })
+        .with_writer(TeeLogWriter { 
+            shared: log_shared.clone(), 
+            show_on_console, 
+        })
         .with_ansi(false)
         .init();
 
     info!("Starting RustAgent (pid {})", std::process::id());
+    info!("Mode: {:?}", resolved.mode);
+    if let Some(ref profile) = resolved.profile {
+        info!("Profile: {}", profile);
+    }
     info!("Executable directory: {}", exe_dir.display());
     info!("Workspace directory: {}", workspace_dir);
     info!(
         "Runtime log file: {}",
         log_shared.current_run_path(&DailyLogShared::today()).display()
     );
-    let ws_subdirs = ["memory", "tools", "skills", "logs", "static", "output", "knowledge", "rules"];
+    let ws_subdirs = ["memory", "tools", "skills", "logs", "static", "output", "knowledge", "rules", "profiles"];
     for sub in &ws_subdirs {
         let p = std::path::Path::new(&workspace_dir).join(sub);
         let _ = std::fs::create_dir_all(&p);
@@ -241,9 +300,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::warn!("Failed to extract YARA rules: {}", e);
     }
 
-    // Load config from workspace (generates default config.toml on first run)
-    let config = Config::load(&workspace_dir)?;
-    info!("Config loaded from workspace");
+    // Load config: explicit --config path > workspace config.toml > default
+    let mut config = if let Some(ref config_path) = resolved.config_path {
+        // Load from explicit config file path
+        let content = std::fs::read_to_string(config_path)
+            .map_err(|e| format!("Failed to read config file '{}': {}", config_path, e))?;
+        let cfg: Config = toml::from_str(&content)
+            .map_err(|e| format!("Failed to parse config file '{}': {}", config_path, e))?;
+        info!("Config loaded from explicit path: {}", config_path);
+        cfg
+    } else {
+        let cfg = Config::load(&workspace_dir)?;
+        info!("Config loaded from workspace");
+        cfg
+    };
+
+    // Apply CLI overrides (CLI takes precedence over config file)
+    config.apply_cli_overrides(&resolved.overrides);
+
+    // Apply run mode override (--mode instant|expert)
+    if let Some(ref run_mode) = resolved.run_mode {
+        config.agent.mode = run_mode.clone();
+    }
+    info!("Run mode: {}", config.agent.mode);
 
     // ── Detect user's Given Name from Windows ──
     // Detect on every startup using whoami crate (no persistence to config).
@@ -255,11 +334,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // push messages to WebSocket clients (e.g. sys_remind) can hold a sender.
     let (notify_tx, _) = tokio::sync::broadcast::channel::<String>(100);
 
-    // ── Random password (regenerated on EVERY startup) ──────
-    // A fresh random 6-digit password is generated each time the process
-    // starts — it is never reused across runs. It is written to .password
-    // (for reference) and logged so the user can find the current one.
-    let password = {
+    // ── Random password (web mode only) ──────
+    // A fresh random 6-digit password is generated for web dashboard access.
+    // Headless/CLI mode does not require password authentication.
+    let password = if resolved.mode == cli::RunMode::Web {
         let mut bytes = [0u8; 3];
         getrandom::fill(&mut bytes).expect("getrandom");
         let num = ((bytes[0] as u32) << 16 | (bytes[1] as u32) << 8 | bytes[2] as u32) % 1000000;
@@ -269,6 +347,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::warn!("Failed to save password: {}", e);
         }
         password
+    } else {
+        String::new() // Headless mode: no password needed
     };
 
     // ── Extract embedded workspace files (first-run only) ────
@@ -336,7 +416,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let working_dir = if config.agent.working_dir == "." {
+    let working_dir = if resolved.mode == cli::RunMode::Headless {
+        // Headless mode: use --workdir or CWD as the task working directory
+        resolved.workdir.clone().unwrap_or_else(|| {
+            std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| ".".to_string())
+        })
+    } else if config.agent.working_dir == "." {
         workspace_dir.clone()
     } else {
         config.agent.working_dir.clone()
@@ -466,6 +553,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build permission state
     let (permission_resolver, permission_pending) = PermissionResolver::new();
     let permissions = Arc::new(Mutex::new(default_permissions()));
+    // Clone for headless mode (before moving into AppState)
+    let permissions_for_headless = permissions.clone();
+    let permission_pending_for_headless = permission_pending.clone();
 
     // Build scheduler (resolve cron path from workspace)
     let cron_path = std::path::Path::new(&workspace_dir).join("cron_tasks.json");
@@ -522,14 +612,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     info!("Registered cron_manage + memory_md + todo_update + browser_cdp + browser_skill tools");
 
-    // Conditionally register Computer Use tools based on config
-    let computer_use_enabled = Arc::new(std::sync::atomic::AtomicBool::new(config.agent.computer_use));
-    if config.agent.computer_use {
-        let mut reg = shared_tools.write().await;
-        crate::tool::computer_use::register_computer_use_tools(&mut reg);
-        info!("Computer Use tools registered (enabled in config)");
-    }
-    
+    // Computer Use flag (kept for config compatibility, but tools are not available on Linux)
+    let computer_use_enabled = Arc::new(std::sync::atomic::AtomicBool::new(false));
     
     // Human intervention simulation switch (default: false)
     let human_intervention_enabled = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -571,19 +655,130 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         timezone_offset: Arc::new(std::sync::RwLock::new(config.agent.timezone_offset)),
     });
 
-    // Create router and start server
-    let app = server::create_router(state);
-    let addr = format!("{}:{}", config.server.host, config.server.port);
+    // ── Mode branch ──
+    match resolved.mode {
+        cli::RunMode::Headless => {
+            // Headless mode: execute task from positional argument
+            let task = resolved.task.clone().unwrap_or_default();
+            if task.is_empty() {
+                eprintln!("Usage: RustAgent [OPTIONS] <TASK>");
+                eprintln!("Example: RustAgent --profile headless \"运行测试套件并报告失败的测试\"");
+                return Err("No task provided.".into());
+            }
 
-    info!("=== RustAgent is running ===");
-    info!("Local:   http://localhost:{}", config.server.port);
-    info!("Network: http://{}:{}", get_local_ip(), config.server.port);
-    info!("Password: {}", password);
+            info!("=== RustAgent Headless Mode ===");
+            info!("Task: {}", task);
+            if let Some(ref profile) = resolved.profile {
+                info!("Profile: {}", profile);
+            }
 
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+            // Apply permission policy based on CLI flags
+            if resolved.permission_policy == cli::PermissionPolicy::AutoApprove {
+                // Auto-approve all permissions
+                let mut perms = permissions_for_headless.lock().await;
+                perms.insert("read".to_string(), true);
+                perms.insert("write".to_string(), true);
+                perms.insert("delete".to_string(), true);
+                perms.insert("modify".to_string(), true);
+                perms.insert("execute".to_string(), true);
+            } else if resolved.permission_policy == cli::PermissionPolicy::ReadOnly {
+                // Only allow read operations
+                let mut perms = permissions_for_headless.lock().await;
+                perms.insert("read".to_string(), true);
+                perms.insert("write".to_string(), false);
+                perms.insert("delete".to_string(), false);
+                perms.insert("modify".to_string(), false);
+                perms.insert("execute".to_string(), false);
+            }
 
-    Ok(())
+            // Build a session and run the agent
+            let session_id = format!("headless-{}", uuid::Uuid::new_v4());
+            let model_name = config.agent.primary_model.clone().unwrap_or_default();
+
+            let event_stream = runner.run(
+                &task,
+                &session_id,
+                &model_name,
+                config.agent.max_iterations,
+                vec![],  // no history
+                permissions_for_headless.clone(),
+                permission_pending_for_headless.clone(),
+                None,    // no preauth profile
+                config.agent.fallback_model.clone(),
+                config.agent.rabbit_hole_threshold,
+                128000,  // default context window
+                config.agent.context_window_threshold,
+                config.agent.tool_timeout_secs as u64,
+                config.agent.max_tool_retries,
+                vec![],  // no images
+                None,    // no checkpoint
+                None,    // no resume
+            ).await.map_err(|e| format!("Agent run failed: {}", e))?;
+
+            // Consume the event stream and print text output
+            use futures::StreamExt;
+            let mut stream = event_stream;
+            let mut trajectory_file = resolved.trajectory_path.as_ref().and_then(|path| {
+                std::fs::File::create(path).ok()
+            });
+            let mut exit_code: i32 = 0;
+
+            while let Some(event_result) = stream.next().await {
+                match event_result {
+                    Ok(event) => {
+                        // Write trajectory JSONL if enabled
+                        if let Some(ref mut traj_file) = trajectory_file {
+                            use std::io::Write;
+                            let json_line = serde_json::to_string(&event).unwrap_or_default();
+                            let _ = writeln!(traj_file, "{}", json_line);
+                        }
+
+                        match &event {
+                            agent::AgentEvent::TextDelta { content, .. } => {
+                                print!("{}", content);
+                                use std::io::Write;
+                                let _ = std::io::stdout().flush();
+                            }
+                            agent::AgentEvent::Error { message, .. } => {
+                                eprintln!("\n[ERROR] {}", message);
+                                exit_code = 1;
+                            }
+                            agent::AgentEvent::ToolCall { name, .. } => {
+                                info!("[headless] Tool call: {}", name);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("\n[ERROR] Stream error: {}", e);
+                        exit_code = 1;
+                        break;
+                    }
+                }
+            }
+            println!(); // Final newline
+            info!("Headless task completed (exit_code={})", exit_code);
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
+            Ok(())
+        }
+        cli::RunMode::Web => {
+            // Web mode: start the Axum server with dashboard
+            let app = server::create_router(state);
+            let addr = format!("{}:{}", config.server.host, config.server.port);
+
+            info!("=== RustAgent is running ===");
+            info!("Local:   http://localhost:{}", config.server.port);
+            info!("Network: http://{}:{}", get_local_ip(), config.server.port);
+            info!("Password: {}", password);
+
+            let listener = tokio::net::TcpListener::bind(&addr).await?;
+            axum::serve(listener, app).await?;
+
+            Ok(())
+        }
+    }
 }
 
 fn get_local_ip() -> String {
