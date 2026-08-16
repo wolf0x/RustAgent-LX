@@ -294,12 +294,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = std::fs::create_dir_all(&p);
     }
 
-    // Extract embedded YARA rules to workspace/rules/ on first run
-    let rules_dir = std::path::Path::new(&workspace_dir).join("rules");
-    if let Err(e) = tool::malware_analysis::ensure_rules(&rules_dir) {
-        tracing::warn!("Failed to extract YARA rules: {}", e);
-    }
-
     // Load config: explicit --config path > workspace config.toml > default
     let mut config = if let Some(ref config_path) = resolved.config_path {
         // Load from explicit config file path
@@ -608,9 +602,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reg.register(Arc::new(crate::tool::memory_md::MemoryMdTool::new(workspace_dir.clone())));
         reg.register(Arc::new(crate::tool::todo_update::TodoUpdateTool::new(workspace_dir.clone())));
         reg.register(Arc::new(crate::tool::browser_cdp::BrowserCdpTool::new(browser_session)));
-        reg.register(crate::tool::browser_skill::BrowserSkillTool::new(workspace_dir.clone()));
     }
-    info!("Registered cron_manage + memory_md + todo_update + browser_cdp + browser_skill tools");
+    info!("Registered cron_manage + memory_md + todo_update + browser_cdp tools");
 
     // Computer Use flag (kept for config compatibility, but tools are not available on Linux)
     let computer_use_enabled = Arc::new(std::sync::atomic::AtomicBool::new(false));

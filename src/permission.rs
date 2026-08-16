@@ -19,7 +19,6 @@ pub fn tool_category(name: &str) -> &'static str {
         // Read — pure information gathering, no side effects
         "file_read" | "file_list" | "browser_open" | "web_fetch"
         | "ir_weblog_scan" | "ir_log_parse" | "ir_pcap_analyze"
-        | "malware_scan" | "malware_deep"
         | "linux_ir_process" | "linux_ir_network" | "linux_ir_persistence"
         | "linux_ir_rootkit" | "linux_ir_file" | "linux_ir_web"
         | "linux_ir_mining" | "linux_ir_lateral" | "linux_ir_auth"
@@ -30,7 +29,7 @@ pub fn tool_category(name: &str) -> &'static str {
         // Delete
         "file_delete" => "delete",
         // Modify — changes state of existing resources
-        "file_modify" | "browser_cdp" | "browser_skill" | "cron_manage" => "modify",
+        "file_modify" | "browser_cdp" | "cron_manage" => "modify",
         // Execute — arbitrary code execution
         "shell_exec" => "execute",
         // Default: unknown tools (MCP, external) require endorsement

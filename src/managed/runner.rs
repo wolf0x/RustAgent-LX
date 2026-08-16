@@ -642,9 +642,9 @@ impl ManagedRunner {
                         // GUI channel: guide the Executor to use browser tools
                         let mut b = brief;
                         if brief_lang_cn {
-                            b.push_str("\n\n## Execution Channel: GUI\n本轮任务需要浏览器交互——使用 browser_cdp / browser_skill 工具完成浏览器操作。不要尝试用 shell_exec 或 curl 代替 GUI 交互。");
+                            b.push_str("\n\n## Execution Channel: GUI\n本轮任务需要浏览器交互——使用 browser_cdp 工具完成浏览器操作。不要尝试用 shell_exec 或 curl 代替 GUI 交互。");
                         } else {
-                            b.push_str("\n\n## Execution Channel: GUI\nThis round MUST be completed through browser tools - use browser_cdp / browser_skill tools. Do not try shell_exec or curl to replace GUI interaction.");
+                            b.push_str("\n\n## Execution Channel: GUI\nThis round MUST be completed through browser tools - use browser_cdp tool. Do not try shell_exec or curl to replace GUI interaction.");
                         }
                         b
                     }

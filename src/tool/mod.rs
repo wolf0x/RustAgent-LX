@@ -8,10 +8,6 @@ pub mod cron_manage;
 pub mod memory_md;
 pub mod todo_update;
 pub mod browser_cdp;
-pub mod browser_skill;
-pub mod malware_analysis;
-pub mod malware_scan;
-pub mod malware_deep;
 pub mod ir_weblog_scan;
 pub mod ir_log_parse;
 pub mod ir_pcap_analyze;
@@ -340,9 +336,6 @@ impl ToolRegistry {
         // Browser tools
         registry.register(Arc::new(browser_open::BrowserOpenTool));
         registry.register(Arc::new(web_fetch::WebFetchTool));
-        // Malware analysis tools
-        registry.register(Arc::new(malware_scan::MalwareScanTool));
-        registry.register(Arc::new(malware_deep::MalwareDeepTool));
         // Log analysis tools (cross-platform)
         registry.register(Arc::new(ir_weblog_scan::IrWeblogScanTool));
         registry.register(Arc::new(ir_log_parse::IrLogParseTool));
