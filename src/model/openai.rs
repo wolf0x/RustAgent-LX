@@ -243,13 +243,36 @@ impl OpenAiProvider {
             body["tool_choice"] = serde_json::json!("auto");
         }
 
-        let mut req = self.client.post(&url).header("Content-Type", "application/json");
-        if !api_key.is_empty() {
-            req = req.bearer_auth(&api_key);
-        }
-
-        let resp = req.json(&body).send().await
-            .map_err(|e| format!("LLM request failed: {}", e))?;
+        // Send with retry for transient network errors (connection reset, DNS
+        // hiccup, API gateway timeout). A single failed send should not abort
+        // the whole agent round — retry up to 3 times with backoff.
+        const MAX_SEND_RETRIES: usize = 3;
+        let mut last_err: Option<String> = None;
+        let resp = {
+            let mut attempt = 0usize;
+            loop {
+                // Rebuild the request each attempt — reqwest RequestBuilder is
+                // consumed by send(), and the body must be re-attached.
+                let mut r = self.client.post(&url).header("Content-Type", "application/json");
+                if !api_key.is_empty() {
+                    r = r.bearer_auth(&api_key);
+                }
+                match r.json(&body).send().await {
+                    Ok(resp) => break resp,
+                    Err(e) => {
+                        attempt += 1;
+                        last_err = Some(format!("LLM request failed: {}", e));
+                        if attempt >= MAX_SEND_RETRIES {
+                            break return Err(last_err.unwrap());
+                        }
+                        let backoff = std::time::Duration::from_secs(1u64 << (attempt - 1)); // 1s, 2s
+                        warn!("LLM send failed (attempt {}/{}): {} — retrying in {:?}",
+                              attempt, MAX_SEND_RETRIES, e, backoff);
+                        tokio::time::sleep(backoff).await;
+                    }
+                }
+            }
+        };
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -410,13 +433,32 @@ impl Llm for OpenAiProvider {
             body[max_tokens_key(&model.name)] = serde_json::json!(max);
         }
 
-        let mut req = self.client.post(&url).header("Content-Type", "application/json");
-        if !api_key.is_empty() {
-            req = req.bearer_auth(&api_key);
-        }
-
-        let resp = req.json(&body).send().await
-            .map_err(|e| AgentError::model(format!("Request failed: {}", e)))?;
+        // Send with retry for transient network errors (same as chat_stream).
+        const MAX_SEND_RETRIES: usize = 3;
+        let mut last_err: Option<String> = None;
+        let resp = {
+            let mut attempt = 0usize;
+            loop {
+                let mut r = self.client.post(&url).header("Content-Type", "application/json");
+                if !api_key.is_empty() {
+                    r = r.bearer_auth(&api_key);
+                }
+                match r.json(&body).send().await {
+                    Ok(resp) => break resp,
+                    Err(e) => {
+                        attempt += 1;
+                        last_err = Some(format!("Request failed: {}", e));
+                        if attempt >= MAX_SEND_RETRIES {
+                            break return Err(AgentError::model(last_err.unwrap()));
+                        }
+                        let backoff = std::time::Duration::from_secs(1u64 << (attempt - 1));
+                        warn!("LLM send failed (attempt {}/{}): {} — retrying in {:?}",
+                              attempt, MAX_SEND_RETRIES, e, backoff);
+                        tokio::time::sleep(backoff).await;
+                    }
+                }
+            }
+        };
 
         if !resp.status().is_success() {
             let status = resp.status();
