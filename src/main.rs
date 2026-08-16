@@ -618,14 +618,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Human intervention simulation switch (default: false)
     let human_intervention_enabled = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    // Build app state
+    // Build app state (clone Arcs so the headless branch can also use them)
     let state = Arc::new(AppState {
         runner: runner.clone(),
-        skill_manager,
+        skill_manager: skill_manager.clone(),
         mcp_manager: Arc::new(Mutex::new(mcp_manager)),
-        tools: shared_tools,
+        tools: shared_tools.clone(),
         logger,
-        memory_store,
+        memory_store: memory_store.clone(),
         external_tools,
         password: password.clone(),
         model_configs: shared_models.clone(),
@@ -646,10 +646,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         expert_tasks: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         scheduler,
         notify_tx,
-        workspace_dir,
-        provider: provider_for_state,
-        computer_use_enabled,
-        human_intervention_enabled,
+        workspace_dir: workspace_dir.clone(),
+        provider: provider_for_state.clone(),
+        computer_use_enabled: computer_use_enabled.clone(),
+        human_intervention_enabled: human_intervention_enabled.clone(),
         primary_model: Arc::new(std::sync::RwLock::new(config.agent.primary_model.clone())),
         fallback_model: Arc::new(std::sync::RwLock::new(config.agent.fallback_model.clone())),
         timezone_offset: Arc::new(std::sync::RwLock::new(config.agent.timezone_offset)),
@@ -695,25 +695,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let session_id = format!("headless-{}", uuid::Uuid::new_v4());
             let model_name = config.agent.primary_model.clone().unwrap_or_default();
 
-            let event_stream = runner.run(
-                &task,
-                &session_id,
-                &model_name,
-                config.agent.max_iterations,
-                vec![],  // no history
-                permissions_for_headless.clone(),
-                permission_pending_for_headless.clone(),
-                None,    // no preauth profile
-                config.agent.fallback_model.clone(),
-                config.agent.rabbit_hole_threshold,
-                128000,  // default context window
-                config.agent.context_window_threshold,
-                config.agent.tool_timeout_secs as u64,
-                config.agent.max_tool_retries,
-                vec![],  // no images
-                None,    // no checkpoint
-                None,    // no resume
-            ).await.map_err(|e| format!("Agent run failed: {}", e))?;
+            // Expert mode routes to ManagedRunner (Manager-Executor-Auditor loop);
+            // instant mode uses the plain runner. This mirrors the Web mode dispatch
+            // in server.rs so CLI expert output (Manager Plan / Rounds / Findings)
+            // matches the Dashboard behavior.
+            let event_stream = if config.agent.mode == "expert" {
+                info!("Expert mode: dispatching to ManagedRunner");
+                let managed_runner = managed::ManagedRunner::new(
+                    runner.clone(),
+                    provider_for_state.clone(),
+                    model_name.clone(),
+                    config.agent.expert_max_managed_rounds,
+                    memory_store.clone(),
+                    shared_tools.clone(),
+                    working_dir.clone(),
+                    workspace_dir.clone(),
+                    config.agent.expert_max_iterations,
+                    config.agent.rabbit_hole_threshold,
+                    128000,  // default context window
+                    config.agent.expert_tool_timeout_secs as u64,
+                    config.agent.expert_max_tool_retries,
+                    skill_manager.clone(),
+                    computer_use_enabled.clone(),
+                    human_intervention_enabled.clone(),
+                );
+                let task_cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                managed_runner.run(
+                    &task,
+                    &session_id,
+                    &model_name,
+                    &task,  // scope = the task itself
+                    permissions_for_headless.clone(),
+                    permission_pending_for_headless.clone(),
+                    task_cancel,
+                    None,   // no handoff (fresh CLI run)
+                    true,   // force new run
+                ).await.map_err(|e| format!("Managed run failed: {}", e))?
+            } else {
+                runner.run(
+                    &task,
+                    &session_id,
+                    &model_name,
+                    config.agent.max_iterations,
+                    vec![],  // no history
+                    permissions_for_headless.clone(),
+                    permission_pending_for_headless.clone(),
+                    None,    // no preauth profile
+                    config.agent.fallback_model.clone(),
+                    config.agent.rabbit_hole_threshold,
+                    128000,  // default context window
+                    config.agent.context_window_threshold,
+                    config.agent.tool_timeout_secs as u64,
+                    config.agent.max_tool_retries,
+                    vec![],  // no images
+                    None,    // no checkpoint
+                    None,    // no resume
+                ).await.map_err(|e| format!("Agent run failed: {}", e))?
+            };
 
             // Consume the event stream and print text output
             use futures::StreamExt;
@@ -722,6 +760,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::fs::File::create(path).ok()
             });
             let mut exit_code: i32 = 0;
+            // Track whether we need a newline separator before the next TextDelta.
+            // After tool events (logged only), the agent's reply should start on a
+            // fresh line instead of running together with prior output.
+            let mut need_leading_newline = false;
 
             while let Some(event_result) = stream.next().await {
                 match event_result {
@@ -735,33 +777,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         match &event {
                             agent::AgentEvent::TextDelta { content, .. } => {
+                                // TextDelta carries the agent's answer AND Expert-mode
+                                // managed outputs (Manager Plan / Executor / Verification /
+                                // Auditing) — always shown on terminal.
+                                // Ensure a blank line separates this text block from the
+                                // previous tool activity (which was logged, not printed).
+                                if need_leading_newline && !content.starts_with('\n') {
+                                    println!();
+                                }
+                                need_leading_newline = false;
                                 print!("{}", content);
                                 use std::io::Write;
                                 let _ = std::io::stdout().flush();
                             }
                             agent::AgentEvent::ToolCall { name, args, .. } => {
-                                // Show tool calls in CLI mode
-                                eprintln!("\n🔧 Calling tool: {}", name);
+                                // Tool calls: log only (not shown on terminal).
+                                // tracing writes to workspace/logs/ in CLI mode.
+                                // Mark that the next TextDelta should start on a new line.
+                                need_leading_newline = true;
                                 if !args.is_null() && !args.as_object().map(|m| m.is_empty()).unwrap_or(true) {
-                                    eprintln!("   Args: {}", serde_json::to_string_pretty(args).unwrap_or_default());
+                                    info!("[cli] Tool call: {} | args: {}", name, serde_json::to_string(args).unwrap_or_default());
+                                } else {
+                                    info!("[cli] Tool call: {}", name);
                                 }
                             }
                             agent::AgentEvent::ToolResult { name, result, .. } => {
-                                // Show tool results in CLI mode (truncated if too long).
-                                // Use char-based truncation to avoid panicking on multi-byte
+                                // Tool results: log only (not shown on terminal).
+                                // Char-based truncation avoids panicking on multi-byte
                                 // UTF-8 boundaries (e.g. Chinese text).
-                                let result_str = serde_json::to_string_pretty(result).unwrap_or_default();
-                                let display_str = if result_str.chars().count() > 500 {
+                                need_leading_newline = true;
+                                let result_str = serde_json::to_string(result).unwrap_or_default();
+                                let log_str = if result_str.chars().count() > 500 {
                                     let truncated: String = result_str.chars().take(500).collect();
                                     format!("{}... (truncated, {} chars total)", truncated, result_str.chars().count())
                                 } else {
                                     result_str
                                 };
-                                eprintln!("\n✅ Tool result: {}\n{}", name, display_str);
+                                info!("[cli] Tool result: {} | {}", name, log_str);
                             }
                             agent::AgentEvent::Progress { tool_name, message, elapsed_secs, .. } => {
-                                // Show progress for long-running tools
-                                eprintln!("⏳ [{}s] {} - {}", elapsed_secs, tool_name, message);
+                                // Progress: log only (not shown on terminal).
+                                info!("[cli] Progress: [{}s] {} - {}", elapsed_secs, tool_name, message);
                             }
                             agent::AgentEvent::Error { message, .. } => {
                                 eprintln!("\n❌ [ERROR] {}", message);
