@@ -244,17 +244,6 @@ impl Cli {
         let mode = mode?;
 
         // Resolve task text: --prompt-file > positional task args
-        // Note: when using `cli <task>`, trailing_var_arg captures everything after
-        // "cli" including options like `--mode expert`. We strip leading options
-        // from task_parts here and apply them to the corresponding fields.
-        let (task_parts, trailing_opts) = strip_trailing_options(task_parts);
-        let mut run_mode = self.mode.clone();
-        if run_mode.is_none() {
-            if let Some(m) = trailing_opts.get("mode") {
-                run_mode = Some(m.clone());
-            }
-        }
-
         let task = if let Some(ref prompt_file) = self.prompt_file {
             match std::fs::read_to_string(prompt_file) {
                 Ok(content) if !content.trim().is_empty() => Some(content.trim().to_string()),
@@ -316,51 +305,8 @@ impl Cli {
             execution_timeout: self.timeout,
             trajectory_path: self.trajectory,
             log_level: self.log_level,
-            run_mode,
+            run_mode: self.mode,
             isolated: self.isolated,
         })
     }
-}
-
-/// Strip leading `--key value` option pairs from task parts captured by
-/// trailing_var_arg. Returns the cleaned task parts and a map of extracted
-/// options. Only known options are stripped; unknown ones stay in the task
-/// text (they are likely part of the user's prompt).
-fn strip_trailing_options(parts: Vec<String>) -> (Vec<String>, std::collections::HashMap<String, String>) {
-    // Options that take a value, captured from the trailing task args.
-    const VALUE_OPTS: &[&str] = &[
-        "mode", "model", "fallback-model", "max-iterations", "tool-timeout",
-        "timeout", "context-threshold", "rabbit-hole", "max-retries", "timezone",
-    ];
-    // Flag-only options (no value).
-    const FLAG_OPTS: &[&str] = &["auto-approve", "read-only"];
-
-    let mut opts = std::collections::HashMap::new();
-    let mut task: Vec<String> = Vec::new();
-    let mut iter = parts.into_iter().peekable();
-
-    while let Some(arg) = iter.next() {
-        if let Some(key) = arg.strip_prefix("--") {
-            // --key=value form
-            if let Some((k, v)) = key.split_once('=') {
-                if VALUE_OPTS.contains(&k) || FLAG_OPTS.contains(&k) {
-                    opts.insert(k.to_string(), v.to_string());
-                    continue;
-                }
-            } else if VALUE_OPTS.contains(&key) {
-                // --key value form
-                if let Some(v) = iter.peek() {
-                    if !v.starts_with("--") {
-                        opts.insert(key.to_string(), iter.next().unwrap());
-                        continue;
-                    }
-                }
-            } else if FLAG_OPTS.contains(&key) {
-                opts.insert(key.to_string(), "true".to_string());
-                continue;
-            }
-        }
-        task.push(arg);
-    }
-    (task, opts)
 }
