@@ -107,6 +107,10 @@ pub struct ManagedRunner {
     rabbit_hole_threshold: usize,
     /// Model context window for Executor rounds.
     context_window: usize,
+    /// Context window usage threshold percentage for Executor rounds.
+    context_window_threshold: usize,
+    /// Fallback model for Executor rounds (from config.agent.fallback_model).
+    fallback_model: Option<String>,
     /// Tool execution timeout for Executor rounds.
     tool_timeout_secs: u64,
     /// Max automatic tool retries for Executor rounds.
@@ -154,6 +158,8 @@ impl ManagedRunner {
         max_executor_iterations: usize,
         rabbit_hole_threshold: usize,
         context_window: usize,
+        context_window_threshold: usize,
+        fallback_model: Option<String>,
         tool_timeout_secs: u64,
         max_tool_retries: usize,
         skill_manager: Arc<SkillManager>,
@@ -172,6 +178,8 @@ impl ManagedRunner {
             max_executor_iterations,
             rabbit_hole_threshold,
             context_window,
+            context_window_threshold,
+            fallback_model,
             tool_timeout_secs,
             max_tool_retries,
             skill_manager,
@@ -317,6 +325,8 @@ impl ManagedRunner {
         let max_executor_iterations = self.max_executor_iterations;
         let rabbit_hole_threshold = self.rabbit_hole_threshold;
         let context_window = self.context_window;
+        let context_window_threshold = self.context_window_threshold;
+        let fallback_model = self.fallback_model.clone();
         let tool_timeout_secs = self.tool_timeout_secs;
         let max_tool_retries = self.max_tool_retries;
         let skill_manager = self.skill_manager.clone();
@@ -671,10 +681,10 @@ impl ManagedRunner {
                     permissions.clone(),
                     permission_pending.clone(),
                     Some(permission_profile.clone()), // Phase 6 pre-authorization profile
-                    None, // no fallback model
+                    fallback_model.clone(), // fallback model from config
                     rabbit_hole_threshold,
                     context_window,
-                    80,   // context window threshold
+                    context_window_threshold, // from config, not hardcoded
                     tool_timeout_secs,
                     max_tool_retries,
                     vec![], // no images

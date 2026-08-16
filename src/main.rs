@@ -713,6 +713,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     config.agent.expert_max_iterations,
                     config.agent.rabbit_hole_threshold,
                     128000,  // default context window
+                    config.agent.context_window_threshold,
+                    config.agent.fallback_model.clone(),
                     config.agent.expert_tool_timeout_secs as u64,
                     config.agent.expert_max_tool_retries,
                     skill_manager.clone(),

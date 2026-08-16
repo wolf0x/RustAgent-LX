@@ -1418,6 +1418,8 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                                         state.expert_max_iterations.load(Ordering::SeqCst),
                                         state.rabbit_hole_threshold.load(Ordering::SeqCst),
                                         ctx_window,
+                                        state.context_window_threshold.load(Ordering::SeqCst),
+                                        state.fallback_model.read().unwrap().clone(),
                                         state.expert_tool_timeout_secs.load(Ordering::SeqCst) as u64,
                                         state.expert_max_tool_retries.load(Ordering::SeqCst),
                                         state.skill_manager.clone(),
