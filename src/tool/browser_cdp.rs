@@ -512,7 +512,12 @@ impl BrowserCdpTool {
                 while let (Some(k), Some(v)) = (iter.next(), iter.next()) {
                     attr_map.insert(k, Value::String(v));
                 }
-                let text_brief = if text.len() > 500 { &text[..500] } else { &text };
+                // Char-based truncation to avoid panicking on multi-byte UTF-8 text.
+                let text_brief: String = if text.chars().count() > 500 {
+                    text.chars().take(500).collect()
+                } else {
+                    text.clone()
+                };
                 Ok(json!({
                     "success": true,
                     "action": "find_element",
