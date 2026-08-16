@@ -37,17 +37,34 @@ pub fn load_configs(path: &Path) -> Vec<ModelConfig> {
     match std::fs::read_to_string(path) {
         Ok(content) => match serde_json::from_str::<Vec<ModelConfig>>(&content) {
             Ok(mut configs) => {
+                let mut failed_decrypt = 0;
                 for cfg in &mut configs {
                     if let Some(ref key) = cfg.api_key {
                         if !key.is_empty() {
-                            cfg.api_key = Some(crate::crypto::decrypt(key));
+                            let decrypted = crate::crypto::decrypt(key);
+                            // If decryption failed, decrypt() returns the original ENC: value.
+                            // Detect this and clear the key so the user gets a clear error
+                            // instead of a confusing 401 with a garbage key.
+                            if crate::crypto::is_encrypted(&decrypted) {
+                                warn!(
+                                    "Model '{}': api_key decryption failed (likely copied from another machine). \
+                                     Please replace the ENC: value in models.json with the plaintext API key — \
+                                     it will be re-encrypted automatically on next save.",
+                                    cfg.name
+                                );
+                                cfg.api_key = None;
+                                failed_decrypt += 1;
+                            } else {
+                                cfg.api_key = Some(decrypted);
+                            }
                         }
                     }
                 }
                 info!(
-                    "Loaded {} persisted model config(s) from {} (api keys decrypted)",
+                    "Loaded {} persisted model config(s) from {} (api keys decrypted{})",
                     configs.len(),
-                    path.display()
+                    path.display(),
+                    if failed_decrypt > 0 { format!(", {} FAILED — check models.json", failed_decrypt) } else { String::new() }
                 );
                 configs
             }
