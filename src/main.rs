@@ -747,10 +747,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             agent::AgentEvent::ToolResult { name, result, .. } => {
-                                // Show tool results in CLI mode (truncated if too long)
+                                // Show tool results in CLI mode (truncated if too long).
+                                // Use char-based truncation to avoid panicking on multi-byte
+                                // UTF-8 boundaries (e.g. Chinese text).
                                 let result_str = serde_json::to_string_pretty(result).unwrap_or_default();
-                                let display_str = if result_str.len() > 500 {
-                                    format!("{}... (truncated, {} chars total)", &result_str[..500], result_str.len())
+                                let display_str = if result_str.chars().count() > 500 {
+                                    let truncated: String = result_str.chars().take(500).collect();
+                                    format!("{}... (truncated, {} chars total)", truncated, result_str.chars().count())
                                 } else {
                                     result_str
                                 };
