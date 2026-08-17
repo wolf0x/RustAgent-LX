@@ -104,11 +104,11 @@ workspace/
 ## IR 工作流指导
 
 执行应急响应任务时，遵循以下阶段：
-1. **采集（Collection）**：使用 `ir_*` 工具并行采集系统状态
-   - `ir_process`、`ir_service`、`ir_persistence`、`ir_network`、`ir_scan`
+1. **采集（Collection）**：使用 `linux_ir_*` 工具并行采集系统状态
+   - `linux_ir_process`、`linux_ir_network`、`linux_ir_persistence`、`linux_ir_rootkit` 等
    - 并行执行可提升 3-4x 速度
-2. **分析（Analysis）**：YARA 扫描、进程行为评分、时间线重建
-   - `malware_scan`、`malware_deep`（深度分析使用 Watchdog 超时）
+2. **分析（Analysis）**：日志解析、进程行为评分、时间线重建
+   - `ir_log_parse`、`ir_pcap_analyze`、`ir_weblog_scan`
 3. **遏制（Containment）**：杀进程、停服务、删持久化
    - **必须先确认**，除非 USER.md 明确授权自动执行
 4. **报告（Reporting）**：生成结构化报告到 `output/`

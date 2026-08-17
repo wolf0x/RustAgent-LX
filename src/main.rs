@@ -664,6 +664,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(ref profile) = resolved.profile {
                 info!("Profile: {}", profile);
             }
+            if resolved.loop_count > 0 {
+                info!("Loop supervision enabled: max {} re-check round(s), interval {}s",
+                      resolved.loop_count, resolved.loop_interval);
+            }
 
             // Apply permission policy based on CLI flags
             if resolved.permission_policy == cli::PermissionPolicy::AutoApprove {
@@ -687,6 +691,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Build a session and run the agent
             let session_id = format!("headless-{}", uuid::Uuid::new_v4());
             let model_name = config.agent.primary_model.clone().unwrap_or_default();
+
+            // ── Loop supervision (purposeful, differentiated rounds) ─────
+            // When --loop N is set, the task runs up to N rounds. This is NOT
+            // blind repetition: each round pursues a DISTINCT strategy so the
+            // agent attacks the goal from a different angle every time.
+            //   Round 1: broad reconnaissance & direct approach
+            //   Round 2: focus on what FAILED/was unsolved in round 1, try an
+            //            alternative technique
+            //   Round 3+: escalate to deeper/creative methods on the remaining
+            //            unsolved items
+            // Each round receives (a) a fresh-angle summary of prior results and
+            // (b) an explicit per-round strategy directive, so no round repeats
+            // the previous one's work.
+            let total_rounds = if resolved.loop_count == 0 { 1 } else { resolved.loop_count };
+            let mut round: usize = 0;
+            let mut final_exit_code: i32 = 0;
+            // Accumulated results from prior rounds (fresh-angle summaries), used
+            // to tell the next round what already happened and what failed.
+            let mut progress_context: String = String::new();
+
+            loop {
+                // Per-round strategy directive — each round gets a DIFFERENT,
+                // explicit objective so execution is never a blind rerun.
+                let strategy = loop_strategy(round);
+
+                // Build the effective task for this round. Round 1 uses the raw
+                // task plus the round-1 strategy. Later rounds prepend the
+                // fresh-angle summary of prior work AND the new round's distinct
+                // strategy, explicitly listing what must NOT be redone.
+                let effective_task = if round == 0 {
+                    format!("{}\n\n{}", task, strategy)
+                } else {
+                    format!(
+                        "{}\n\n# 先前各轮进展与结果（新角度总结）\n{}\n\n{}\n\n\
+                         严格要求：不要重复上面任何一轮已经完成或已经尝试失败的具体操作，\
+                         必须采用本轮策略给出的不同方法，针对尚未解决的部分推进。",
+                        task, progress_context, strategy
+                    )
+                };
+
+                if round > 0 {
+                    info!("[loop] Round {}/{}: relaunching with distinct strategy (context {} chars)",
+                          round + 1, total_rounds, progress_context.chars().count());
+                }
 
             // Expert mode routes to ManagedRunner (Manager-Executor-Auditor loop);
             // instant mode uses the plain runner. This mirrors the Web mode dispatch
@@ -716,10 +764,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 let task_cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
                 managed_runner.run(
-                    &task,
+                    &effective_task,
                     &session_id,
                     &model_name,
-                    &task,  // scope = the task itself
+                    &effective_task,  // scope = the task itself
                     permissions_for_headless.clone(),
                     permission_pending_for_headless.clone(),
                     task_cancel,
@@ -728,7 +776,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ).await.map_err(|e| format!("Managed run failed: {}", e))?
             } else {
                 runner.run(
-                    &task,
+                    &effective_task,
                     &session_id,
                     &model_name,
                     config.agent.max_iterations,
@@ -759,6 +807,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // After tool events (logged only), the agent's reply should start on a
             // fresh line instead of running together with prior output.
             let mut need_leading_newline = false;
+            // Capture this round's assistant text — used to build the fresh-angle
+            // progress summary if a loop re-check is needed.
+            let mut round_text = String::new();
 
             while let Some(event_result) = stream.next().await {
                 match event_result {
@@ -781,6 +832,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     println!();
                                 }
                                 need_leading_newline = false;
+                                round_text.push_str(content);
                                 print!("{}", content);
                                 use std::io::Write;
                                 let _ = std::io::stdout().flush();
@@ -829,9 +881,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             println!(); // Final newline
-            info!("Headless task completed (exit_code={})", exit_code);
-            if exit_code != 0 {
-                std::process::exit(exit_code);
+            info!("Headless round {} completed (exit_code={})", round + 1, exit_code);
+
+            // ── Loop progression decision (purposeful, never a blind rerun) ──
+            // Always record this round's fresh-angle summary. Then decide:
+            //   - reached total_rounds -> stop (loop budget exhausted)
+            //   - otherwise -> sleep loop_interval, relaunch with the NEXT
+            //     round's DISTINCT strategy targeting the unsolved remainder.
+            // A round that fully succeeded still advances to the next round when
+            // --loop was requested, because the goal is to re-attack unsolved
+            // items from a new angle; however an exit_code==0 round records its
+            // success and the next strategy explicitly forbids redoing it.
+            let round_summary: String = if round_text.chars().count() > 2000 {
+                round_text.chars().take(2000).collect()
+            } else {
+                round_text.clone()
+            };
+            if progress_context.is_empty() {
+                progress_context = format!("## 第 {} 轮结果\n{}", round + 1, round_summary);
+            } else {
+                progress_context.push_str(&format!("\n\n## 第 {} 轮结果\n{}", round + 1, round_summary));
+            }
+            // Track the latest round's exit code for the final process status.
+            final_exit_code = exit_code;
+
+            round += 1;
+            if round >= total_rounds {
+                info!("[loop] Completed all {} purposeful round(s)", total_rounds);
+                break;
+            }
+            println!("\n\n🔄 [loop] 第 {} 轮结束，{} 秒后发起第 {} 轮（采用不同策略，针对未解决部分）...",
+                     round, resolved.loop_interval, round + 1);
+            info!("[loop] Round {} done; sleeping {}s before round {} (distinct strategy)",
+                  round, resolved.loop_interval, round + 1);
+            tokio::time::sleep(std::time::Duration::from_secs(resolved.loop_interval)).await;
+            // Continue the loop for the next differentiated round
+            }
+
+            if final_exit_code != 0 {
+                std::process::exit(final_exit_code);
             }
             Ok(())
         }
@@ -862,4 +950,43 @@ fn get_local_ip() -> String {
         })
         .map(|addr| addr.ip().to_string())
         .unwrap_or_else(|_| "0.0.0.0".to_string())
+}
+
+/// Per-round strategy directives for --loop supervision.
+///
+/// Each round gets a DISTINCT, explicit objective so looping is purposeful and
+/// never a blind rerun of the same task. The directives escalate from broad
+/// reconnaissance to targeted re-thinking of previously failed/unsolved items.
+/// Round indices beyond the predefined list fall back to an escalation strategy.
+fn loop_strategy(round: usize) -> String {
+    match round {
+        0 => format!(
+            "# 本轮策略（第 1 轮：全面侦察 + 直接求解）\n\
+             - 先做全面信息收集，弄清目标、环境与可用线索\n\
+             - 采用最直接、最常规的方法尝试解决\n\
+             - 明确记录：哪些子目标已解决、哪些未解决、哪些方法已尝试但失败\n\
+             - 结束时给出清晰的状态清单（已解决 / 未解决 / 已失败的方法）"
+        ),
+        1 => format!(
+            "# 本轮策略（第 2 轮：针对失败项，换用替代技术）\n\
+             - 不要重复第 1 轮已成功或已失败的具体操作\n\
+             - 聚焦上一轮【未解决 / 失败】的条目，逐条分析失败原因\n\
+             - 对每个失败点改用【不同的技术或路径】（换工具、换参数、换入口、换思路）\n\
+             - 若某方向已被证明走不通，明确放弃并转向其他可行方向"
+        ),
+        2 => format!(
+            "# 本轮策略（第 3 轮：深入挖掘 + 创造性方法）\n\
+             - 针对前两轮仍未解决的条目，采用更深入、更创造性的方法\n\
+             - 重新审视被忽略的细节：边缘情况、隐藏线索、非常规入口\n\
+             - 考虑组合利用：把多个部分线索串联成新思路\n\
+             - 若是 CTF/渗透类：尝试之前未用过的攻击面（不同漏洞类型、不同工具链）"
+        ),
+        n => format!(
+            "# 本轮策略（第 {} 轮：收敛攻坚）\n\
+             - 只针对历轮仍未解决的最小剩余集合\n\
+             - 优先采用此前从未尝试过的方法，严禁重复历轮已验证无效的操作\n\
+             - 对每个剩余条目给出：新方法、依据、预期；若确认无法解决，说明原因并收尾",
+            n + 1
+        ),
+    }
 }

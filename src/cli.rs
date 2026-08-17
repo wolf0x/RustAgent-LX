@@ -115,6 +115,18 @@ pub struct Cli {
     /// Write trajectory JSONL to this path (for external harness integration)
     #[arg(long)]
     pub trajectory: Option<String>,
+
+    /// Loop mode: run the task N rounds total (heartbeat-style supervision).
+    /// Each round after the first re-summarizes prior results from a FRESH ANGLE,
+    /// redesigns the system prompt with a new perspective, and reruns the same task.
+    /// In CTF scenarios this re-thinks previously failed/unsolved challenges.
+    /// 0 or omitted = single run (no loop). --loop 3 means 3 rounds total.
+    #[arg(long = "loop", default_value = "0")]
+    pub loop_rounds: usize,
+
+    /// Seconds to wait between loop rounds (default 30).
+    #[arg(long, default_value = "30")]
+    pub loop_interval: u64,
 }
 
 /// Resolved startup configuration after parsing CLI args
@@ -146,6 +158,10 @@ pub struct ResolvedCli {
     pub run_mode: Option<String>,
     /// Whether to use isolated workspace for this profile
     pub isolated: bool,
+    /// Loop supervision: max re-check rounds (0 = disabled)
+    pub loop_count: usize,
+    /// Seconds between loop re-checks
+    pub loop_interval: u64,
 }
 
 /// Resolved run mode
@@ -307,6 +323,8 @@ impl Cli {
             log_level: self.log_level,
             run_mode: self.mode,
             isolated: self.isolated,
+            loop_count: self.loop_rounds,
+            loop_interval: self.loop_interval,
         })
     }
 }

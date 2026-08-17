@@ -2,7 +2,7 @@
 
 # RustAgent
 
-跨平台通用 AI 智能体——支持 Web Dashboard 和 CLI 两种运行模式，具备 WebSocket 网关、多模型支持、31+ 内置工具、权限管控、持久记忆与任务调度能力。单二进制部署，开箱即用。
+跨平台通用 AI 智能体——支持 Web Dashboard 和 CLI 两种运行模式，具备 WebSocket 网关、多模型支持、30 个内置工具、权限管控、持久记忆与任务调度能力。单二进制部署，开箱即用。
 
 ## 🎯 项目定位
 
@@ -13,7 +13,7 @@ RustAgent 是一个**跨平台通用 AI 智能体**，从最初的 Windows IR（
 - **CLI Headless 模式**：命令行自动化执行，适合脚本集成、定时任务、LongHorizon-Harness 等外部框架调用
 
 **核心能力**：
-- 🔧 **31+ 内置工具**：文件操作、Shell 执行、浏览器自动化、恶意软件分析、日志分析、SSH 远程执行等
+- 🔧 **30 个内置工具**：文件操作、Shell 执行、浏览器自动化、日志分析、SSH 远程执行等
 - 🧠 **智能记忆系统**：SQLite + FTS5 全文搜索 + 知识蒸馏，积累调查经验
 - 🔒 **安全权限系统**：分类门控 + 意图策略引擎（Block/Audit/Pass）
 - 🌐 **多模型支持**：OpenAI-compatible API，支持 DeepSeek、GPT-4、Qwen 等
@@ -111,7 +111,7 @@ RustAgent --profile myproject --isolated cli "task"
 │    └── Agent 回答输出（stdout）                  │
 ├─────────────────────────────────────────────────┤
 │  Tool Layer                                      │
-│    ├── 31+ Built-in Tools                        │
+│    ├── 30 Built-in Tools                        │
 │    ├── MCP Client (stdio + SSE)                 │
 │    ├── Skill Manager (weighted scoring)          │
 │    └── External Tools (workspace/tools/)         │
@@ -141,14 +141,10 @@ RustAgent --profile myproject --isolated cli "task"
   - **Audit**：`rm`、`kill`、`systemctl stop` 等高危操作（记录日志）
   - **Pass**：`ps`、`ls`、`netstat` 等只读命令
 
-### 浏览器自动化（2 个）
+### 浏览器自动化（1 个）
 - **browser_cdp**：chromiumoxide CDP 隔离浏览器（无登录态，安全搜索）
-- **browser_skill**：BSK 扩展控制用户浏览器（需要登录态的操作）
 
-### 恶意软件分析（3 个）
-- **malware_scan**：Boreal YARA 规则扫描（支持自定义规则集）
-- **malware_deep**：PE 深度分析（goblin 解析 + iced-x86 反汇编）
-- **malware_analysis**：综合恶意软件分析
+> 注：`browser_skill`（BSK 浏览器控制）和恶意软件分析工具（`malware_scan`/`malware_deep`）已在 v1.1.0 移除，改为通过外部 skills 加载实现。
 
 ### 日志分析（3 个）
 - **ir_log_parse**：通用日志解析（自动识别格式，安全模式匹配）

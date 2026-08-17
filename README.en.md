@@ -2,7 +2,7 @@
 
 # RustAgent
 
-Cross-platform general-purpose AI agent with Web Dashboard and CLI modes, WebSocket gateway, multi-model support, 31+ built-in tools, permission control, persistent memory, and task scheduling. Single-binary deployment, ready out of the box.
+Cross-platform general-purpose AI agent with Web Dashboard and CLI modes, WebSocket gateway, multi-model support, 30 built-in tools, permission control, persistent memory, and task scheduling. Single-binary deployment, ready out of the box.
 
 ## 🎯 Positioning
 
@@ -13,7 +13,7 @@ RustAgent is a **cross-platform general-purpose AI agent** that evolved from a W
 - **CLI Headless Mode**: Command-line automation for script integration, scheduled tasks, and external frameworks like LongHorizon-Harness
 
 **Core Capabilities**:
-- 🔧 **31+ Built-in Tools**: File operations, shell execution, browser automation, malware analysis, log analysis, SSH remote execution
+- 🔧 **30 Built-in Tools**: File operations, shell execution, browser automation, log analysis, SSH remote execution
 - 🧠 **Intelligent Memory System**: SQLite + FTS5 full-text search + knowledge distillation
 - 🔒 **Security Permission System**: Category gates + Intent Policy engine (Block/Audit/Pass)
 - 🌐 **Multi-model Support**: OpenAI-compatible API, supporting DeepSeek, GPT-4, Qwen, etc.
@@ -111,7 +111,7 @@ RustAgent --profile myproject --isolated cli "task"
 │    └── Agent answer output (stdout)             │
 ├─────────────────────────────────────────────────┤
 │  Tool Layer                                      │
-│    ├── 31+ Built-in Tools                        │
+│    ├── 30 Built-in Tools                        │
 │    ├── MCP Client (stdio + SSE)                 │
 │    ├── Skill Manager (weighted scoring)          │
 │    └── External Tools (workspace/tools/)         │
@@ -141,14 +141,10 @@ RustAgent --profile myproject --isolated cli "task"
   - **Audit**: `rm`, `kill`, `systemctl stop`, and other high-risk operations (logged)
   - **Pass**: `ps`, `ls`, `netstat`, and other read-only commands
 
-### Browser Automation (2 tools)
+### Browser Automation (1 tool)
 - **browser_cdp**: chromiumoxide CDP isolated browser (no login state, secure search)
-- **browser_skill**: BSK extension controls user browser (operations requiring login state)
 
-### Malware Analysis (3 tools)
-- **malware_scan**: Boreal YARA rule scanning (custom rule sets supported)
-- **malware_deep**: PE deep analysis (goblin parsing + iced-x86 disassembly)
-- **malware_analysis**: Comprehensive malware analysis
+> Note: `browser_skill` (BSK browser control) and malware analysis tools (`malware_scan`/`malware_deep`) were removed in v1.1.0 and are now provided via external skills loading.
 
 ### Log Analysis (3 tools)
 - **ir_log_parse**: Universal log parsing (auto-identify format, security pattern matching)
