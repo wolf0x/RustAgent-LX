@@ -665,8 +665,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 info!("Profile: {}", profile);
             }
             if resolved.loop_count > 0 {
-                info!("Loop supervision enabled: max {} re-check round(s), interval {}s",
-                      resolved.loop_count, resolved.loop_interval);
+                info!("Loop supervision enabled: {} round(s) total (original run + re-checks after completion)",
+                      resolved.loop_count);
             }
 
             // Apply permission policy based on CLI flags
@@ -692,18 +692,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let session_id = format!("headless-{}", uuid::Uuid::new_v4());
             let model_name = config.agent.primary_model.clone().unwrap_or_default();
 
-            // ── Loop supervision (purposeful, differentiated rounds) ─────
-            // When --loop N is set, the task runs up to N rounds. This is NOT
-            // blind repetition: each round pursues a DISTINCT strategy so the
-            // agent attacks the goal from a different angle every time.
-            //   Round 1: broad reconnaissance & direct approach
-            //   Round 2: focus on what FAILED/was unsolved in round 1, try an
-            //            alternative technique
-            //   Round 3+: escalate to deeper/creative methods on the remaining
-            //            unsolved items
-            // Each round receives (a) a fresh-angle summary of prior results and
-            // (b) an explicit per-round strategy directive, so no round repeats
-            // the previous one's work.
+            // ── Loop supervision (additive switch, purposeful rounds) ────
+            // --loop is an ADDITIVE monitoring switch on top of the normal
+            // instant/expert behavior:
+            //   - loop_count == 0 (default): pure instant/expert run, exactly one
+            //     round, NO loop supervision (original behavior, unchanged).
+            //   - loop_count == N (>0): the original task runs to COMPLETION first
+            //     (round 1). Only AFTER it completes does the loop monitor trigger
+            //     up to N-1 additional re-check rounds. Each re-check re-summarizes
+            //     prior results from a fresh angle and reruns with a DISTINCT
+            //     strategy — never a blind rerun. There is no sleep/interval: the
+            //     next round starts immediately after the previous one completes.
             let total_rounds = if resolved.loop_count == 0 { 1 } else { resolved.loop_count };
             let mut round: usize = 0;
             let mut final_exit_code: i32 = 0;
@@ -732,7 +731,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 if round > 0 {
-                    info!("[loop] Round {}/{}: relaunching with distinct strategy (context {} chars)",
+                    info!("[loop] Re-check round {}/{} after original task completed (distinct strategy, context {} chars)",
                           round + 1, total_rounds, progress_context.chars().count());
                 }
 
@@ -884,14 +883,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Headless round {} completed (exit_code={})", round + 1, exit_code);
 
             // ── Loop progression decision (purposeful, never a blind rerun) ──
-            // Always record this round's fresh-angle summary. Then decide:
-            //   - reached total_rounds -> stop (loop budget exhausted)
-            //   - otherwise -> sleep loop_interval, relaunch with the NEXT
-            //     round's DISTINCT strategy targeting the unsolved remainder.
-            // A round that fully succeeded still advances to the next round when
-            // --loop was requested, because the goal is to re-attack unsolved
-            // items from a new angle; however an exit_code==0 round records its
-            // success and the next strategy explicitly forbids redoing it.
+            // The original task (round 1) always runs to completion first. This
+            // decision point is only reached AFTER a round completes. Then:
+            //   - loop_count == 0 -> total_rounds == 1 -> break immediately
+            //     (pure instant/expert behavior, no loop supervision).
+            //   - reached total_rounds -> stop (loop budget exhausted).
+            //   - otherwise -> start the next re-check round IMMEDIATELY (no
+            //     sleep/interval) with a DISTINCT strategy targeting the unsolved
+            //     remainder, informed by the fresh-angle summary of prior rounds.
             let round_summary: String = if round_text.chars().count() > 2000 {
                 round_text.chars().take(2000).collect()
             } else {
@@ -907,15 +906,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             round += 1;
             if round >= total_rounds {
-                info!("[loop] Completed all {} purposeful round(s)", total_rounds);
+                if resolved.loop_count == 0 {
+                    info!("[loop] Loop disabled (loop_count=0) — single run complete");
+                } else {
+                    info!("[loop] Completed all {} purposeful round(s)", total_rounds);
+                }
                 break;
             }
-            println!("\n\n🔄 [loop] 第 {} 轮结束，{} 秒后发起第 {} 轮（采用不同策略，针对未解决部分）...",
-                     round, resolved.loop_interval, round + 1);
-            info!("[loop] Round {} done; sleeping {}s before round {} (distinct strategy)",
-                  round, resolved.loop_interval, round + 1);
-            tokio::time::sleep(std::time::Duration::from_secs(resolved.loop_interval)).await;
-            // Continue the loop for the next differentiated round
+            // Loop monitor triggered: original round completed, start the next
+            // differentiated re-check round immediately (no interval).
+            println!("\n\n🔄 [loop] 第 {} 轮已完成，立即发起第 {} 轮复查（采用不同策略，针对未解决部分）...",
+                     round, round + 1);
+            info!("[loop] Round {} completed; immediately starting re-check round {} (distinct strategy)",
+                  round, round + 1);
+            // Continue the loop for the next differentiated round (no sleep)
             }
 
             if final_exit_code != 0 {

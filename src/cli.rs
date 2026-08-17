@@ -116,17 +116,14 @@ pub struct Cli {
     #[arg(long)]
     pub trajectory: Option<String>,
 
-    /// Loop mode: run the task N rounds total (heartbeat-style supervision).
-    /// Each round after the first re-summarizes prior results from a FRESH ANGLE,
-    /// redesigns the system prompt with a new perspective, and reruns the same task.
+    /// Loop supervision switch (additive on top of instant/expert mode).
+    /// When set to N (>0), after the original task run COMPLETES, the agent
+    /// re-checks the goal up to N-1 additional times. Each re-check re-summarizes
+    /// prior results from a FRESH ANGLE and reruns with a new-perspective strategy.
     /// In CTF scenarios this re-thinks previously failed/unsolved challenges.
-    /// 0 or omitted = single run (no loop). --loop 3 means 3 rounds total.
+    /// 0 or omitted = pure instant/expert behavior with NO loop supervision.
     #[arg(long = "loop", default_value = "0")]
     pub loop_rounds: usize,
-
-    /// Seconds to wait between loop rounds (default 30).
-    #[arg(long, default_value = "30")]
-    pub loop_interval: u64,
 }
 
 /// Resolved startup configuration after parsing CLI args
@@ -160,8 +157,6 @@ pub struct ResolvedCli {
     pub isolated: bool,
     /// Loop supervision: max re-check rounds (0 = disabled)
     pub loop_count: usize,
-    /// Seconds between loop re-checks
-    pub loop_interval: u64,
 }
 
 /// Resolved run mode
@@ -324,7 +319,6 @@ impl Cli {
             run_mode: self.mode,
             isolated: self.isolated,
             loop_count: self.loop_rounds,
-            loop_interval: self.loop_interval,
         })
     }
 }
